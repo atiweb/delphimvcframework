@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2021 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -487,10 +487,16 @@ begin
     Render(lDM.qryCustomers, False,
       procedure(const DS: TDataset; const Links: IMVCLinks)
       begin
-        Links.AddRefLink.Add(HATEOAS.HREF, '/customers/' + DS.FieldByName('cust_no').AsString)
-          .Add(HATEOAS.REL, 'self').Add(HATEOAS._TYPE, 'application/json');
-        Links.AddRefLink.Add(HATEOAS.HREF, '/customers/' + DS.FieldByName('cust_no').AsString +
-          '/orders').Add(HATEOAS.REL, 'orders').Add(HATEOAS._TYPE, 'application/json');
+        Links
+          .AddRefLink
+            .Add(HATEOAS.HREF, '/customers/' + DS.FieldByName('cust_no').AsString)
+            .Add(HATEOAS.REL, 'self')
+            .Add(HATEOAS._TYPE, 'application/json');
+        Links
+          .AddRefLink
+            .Add(HATEOAS.HREF, '/customers/' + DS.FieldByName('cust_no').AsString + '/orders')
+            .Add(HATEOAS.REL, 'orders')
+            .Add(HATEOAS._TYPE, 'application/json');
       end);
   finally
     lDM.Free;

@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2021 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -86,7 +86,7 @@ begin
   else
     lValue := aRQLFIlter.OpRight;
 
-  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft);
+  lDBFieldName := GetDatabaseFieldName(aRQLFIlter.OpLeft, True);
 
   case aRQLFIlter.Token of
     tkEq:
@@ -219,7 +219,7 @@ begin
   begin
     if I > 0 then
       Result := Result + ',';
-    Result := Result + ' ' + GetFieldNameForSQL(GetDatabaseFieldName(aRQLSort.Fields[I]));
+    Result := Result + ' ' + GetFieldNameForSQL(GetDatabaseFieldName(aRQLSort.Fields[I], True));
     if aRQLSort.Signs[I] = '+' then
       Result := Result + ' ASC'
     else
