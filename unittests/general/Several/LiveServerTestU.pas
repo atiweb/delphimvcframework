@@ -32,7 +32,7 @@ uses
   MVCFramework.RESTClient,
   MVCFramework.JSONRPC.Client,
   System.DateUtils,
-  System.Hash;
+  System.Hash, System.Rtti;
 
 type
 
@@ -45,7 +45,7 @@ type
     [Setup]
     procedure Setup; virtual;
     [TearDown]
-    procedure TearDown;
+    procedure TearDown; virtual;
 
   end;
 
@@ -56,6 +56,18 @@ type
     [TestCase('request url /fault', '/exception/fault')]
     [TestCase('request url /fault2', '/exception/fault2')]
     procedure TestControllerWithExceptionInCreate(const URLSegment: string);
+
+    [Test]
+    [TestCase('url "/"', '/')]
+    [TestCase('url "/action1"', '/action1')]
+    [TestCase('url "/action2"', '/action2')]
+    [TestCase('url "/api/v1"', '/api/v1')]
+    [TestCase('url "/api/v1/action1"', '/api/v1/action1')]
+    [TestCase('url "/api/v1/action2"', '/api/v1/action2')]
+    [TestCase('url "/api/v2"', '/api/v2')]
+    [TestCase('url "/api/v2/action1"', '/api/v2/action1')]
+    [TestCase('url "/api/v2/action2"', '/api/v2/action2')]
+    procedure TestMultiMVCPathOnControllerAndAction(const URLSegment: string);
 
     [Test]
     procedure TestReqWithParams;
@@ -77,6 +89,8 @@ type
     procedure TestPOSTWithObjectJSONBody;
     [Test]
     procedure TestCustomerEcho;
+    [Test]
+    procedure TestCustomerEchoBodyFor;
     [Test]
     procedure TestPOSTWithoutContentType;
     [Test]
@@ -144,6 +158,10 @@ type
     [Test]
     // [Category('this')]
     procedure TestEntityWithEmptyArrays;
+    [Test]
+    procedure TestEntityWithGUIDs;
+    [Test]
+    procedure TestEntityWithGUIDsEcho;
     [Test]
     procedure TestBasicAuth02;
     [Test]
@@ -277,6 +295,9 @@ type
     [Category('renders')]
     procedure TestIssue406;
 
+    [Test]
+    procedure TestIssue542;
+
   end;
 
   [TestFixture]
@@ -336,7 +357,19 @@ type
     procedure TestHooksWhenOnBeforeCallHookRaisesError;
     [Test]
     procedure TestHooksWhenOnBeforeRoutingHookRaisesError;
-
+    //record tests
+    [Test]
+    procedure TestRequest_NoParams_SingleRecordAsResult;
+    [Test]
+    procedure TestRequest_NoParams_SingleComplexRecordAsResult;
+    [Test]
+    procedure TestRequest_Echo_SingleRecordAsResult;
+    [Test]
+    procedure TestRequest_Echo_ComplexRecord;
+    [Test]
+    procedure TestRequest_Echo_ComplexRecords;
+    [Test]
+    procedure TestRequest_NoParams_DynamicArrayOfRecordAsResult;
   end;
 
   [TestFixture]
@@ -372,7 +405,7 @@ uses
   Vcl.Graphics
 {$ENDIF}
     , TestConstsU, MVCFramework.Tests.Serializer.Entities,
-  MVCFramework.Logger;
+  MVCFramework.Logger, System.IOUtils;
 
 function GetServer: string;
 begin
@@ -813,6 +846,48 @@ begin
   end;
 end;
 
+procedure TServerTest.TestCustomerEchoBodyFor;
+var
+  r: IMVCRESTResponse;
+  lCustomer: TCustomer;
+  lSer: IMVCSerializer;
+begin
+  lCustomer := TCustomer.Create;
+  try
+    lCustomer.Name := 'bit Time Professionals';
+    lCustomer.ContactFirst := 'Daniele'; // transient
+    lCustomer.ContactLast := 'Teti'; // transient
+    lCustomer.AddressLine1 := 'Via Roma 10';
+    lCustomer.AddressLine2 := '00100, ROMA';
+    lCustomer.Logo.SetSize(100, 100);
+    lCustomer.Logo.Canvas.FillRect(Rect(0, 0, 100, 100));
+    lCustomer.Logo.Canvas.Font.Color := clRed;
+    lCustomer.Logo.Canvas.TextOut(10, 50, 'From Client');
+    lCustomer.Logo.SaveToFile('customer_logo_before_to_send.bmp');
+    lSer := GetDefaultSerializer;
+    RegisterOptionalCustomTypesSerializers(lSer);
+    r := RESTClient.Accept(TMVCMediaType.APPLICATION_JSON)
+      .Post('/customerechobodyfor', lSer.SerializeObject(lCustomer));
+  finally
+    lCustomer.Free;
+  end;
+
+  lCustomer := TCustomer.Create;
+  try
+    lSer := GetDefaultSerializer;
+    RegisterOptionalCustomTypesSerializers(lSer);
+    lSer.DeserializeObject(r.Content, lCustomer);
+    Assert.areEqual('bit Time Professionals changed', lCustomer.Name);
+    Assert.areEqual('', lCustomer.ContactFirst);
+    Assert.areEqual('', lCustomer.ContactLast);
+    lCustomer.Logo.SaveToFile('customer_logo_after_received.bmp');
+    Assert.areEqual('9a4e150a92ecb68ad83e8ead27026dcc',
+      THashMD5.GetHashStringFromFile('customer_logo_after_received.bmp'));
+  finally
+    lCustomer.Free;
+  end;
+end;
+
 procedure TServerTest.TestCustomAuthLoginLogout;
 var
   lRes: IMVCRESTResponse;
@@ -1035,6 +1110,59 @@ begin
   end;
 end;
 
+procedure TServerTest.TestEntityWithGUIDs;
+var
+  lRes: IMVCRESTResponse;
+  lJOBJ: TJsonObject;
+begin
+  lRes := RESTClient.Get('/issue552');
+  lJOBJ := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}', lJOBJ.S['guid']);
+    Assert.AreEqual('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}', lJOBJ.S['nullableguid']);
+    Assert.IsTrue(lJOBJ.IsNull('nullableguid2'));
+  finally
+    lJOBJ.Free;
+  end;
+end;
+
+procedure TServerTest.TestEntityWithGUIDsEcho;
+var
+  lRes: IMVCRESTResponse;
+  lJOBJ: TJsonObject;
+  lObj: TEntityWithGUIDs;
+begin
+  lObj := TEntityWithGUIDs.Create(False);
+  lObj.GUID := StringToGUID('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}');
+  lObj.NullableGUID := StringToGUID('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}');
+  lObj.NullableGUID2.Clear;
+  lRes := RESTClient.Post('/guidserializationecho', lObj, True);
+  Assert.IsTrue(lRes.Success);
+  lJOBJ := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}', lJOBJ.S['guid']);
+    Assert.AreEqual('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}', lJOBJ.S['nullableguid']);
+    Assert.IsTrue(lJOBJ.IsNull('nullableguid2'));
+  finally
+    lJOBJ.Free;
+  end;
+
+  lObj := TEntityWithGUIDs.Create(False);
+  lObj.GUID := StringToGUID('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}');
+  lObj.NullableGUID := StringToGUID('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}');
+  lObj.NullableGUID2 := StringToGUID('{D6DC2A99-CFFE-43C8-A4DC-0492786AB303}');
+  lRes := RESTClient.Post('/guidserializationecho', lObj, True);
+  Assert.IsTrue(lRes.Success);
+  lJOBJ := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}', lJOBJ.S['guid']);
+    Assert.AreEqual('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}', lJOBJ.S['nullableguid']);
+    Assert.AreEqual('{D6DC2A99-CFFE-43C8-A4DC-0492786AB303}', lJOBJ.S['nullableguid2']);
+  finally
+    lJOBJ.Free;
+  end;
+end;
+
 procedure TServerTest.TestRenderActionInCollections;
 var
   lRes: IMVCRESTResponse;
@@ -1149,7 +1277,7 @@ procedure TServerTest.TestFileWithFolderName;
 var
   lRes: IMVCRESTResponse;
 begin
-  lRes := RESTClient.Accept(TMVCMediaType.TEXT_HTML).Get('');
+  lRes := RESTClient.Accept(TMVCMediaType.TEXT_HTML).Get('doesn''t exist');
   Assert.areEqual(404, lRes.StatusCode, '<empty>');
 
   lRes := RESTClient.Accept(TMVCMediaType.TEXT_HTML).Get('/static/index.html');
@@ -1273,6 +1401,79 @@ begin
   Assert.areEqual('{"message":"The Message"}', r.Content, r.Content);
 end;
 
+procedure TServerTest.TestIssue542;
+var
+  lRes: IMVCRESTResponse;
+  lJSON: TJsonObject;
+begin
+  lRes := RESTClient.Get('/issues/542?par1&par2');
+  lJSON := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('par1=,par2=', lJSON.S['QueryStringParams_DelimitedText']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par1'] = jdtString);
+    Assert.AreEqual('', lJSON.S['QueryStringParam_par1']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par2'] = jdtString);
+    Assert.AreEqual('', lJSON.S['QueryStringParam_par2']);
+
+    Assert.AreEqual(2, lJSON.I['QueryParams_Count']);
+    Assert.AreEqual('', lJSON.S['QueryParams_par1']);
+    Assert.AreEqual('', lJSON.S['QueryParams_par2']);
+  finally
+    lJSON.Free;
+  end;
+
+  lRes := RESTClient.Get('/issues/542?par1=123&par2');
+  lJSON := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('par1=123,par2=', lJSON.S['QueryStringParams_DelimitedText']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par1'] = jdtString);
+    Assert.AreEqual('123', lJSON.S['QueryStringParam_par1']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par2'] = jdtString);
+    Assert.AreEqual('', lJSON.S['QueryStringParam_par2']);
+
+    Assert.AreEqual(2, lJSON.I['QueryParams_Count']);
+    Assert.AreEqual('123', lJSON.S['QueryParams_par1']);
+    Assert.AreEqual('', lJSON.S['QueryParams_par2']);
+
+  finally
+    lJSON.Free;
+  end;
+
+  lRes := RESTClient.Get('/issues/542?par1=123&par2=234');
+  lJSON := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('par1=123,par2=234', lJSON.S['QueryStringParams_DelimitedText']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par1'] = jdtString);
+    Assert.AreEqual('123', lJSON.S['QueryStringParam_par1']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par2'] = jdtString);
+    Assert.AreEqual('234', lJSON.S['QueryStringParam_par2']);
+
+    Assert.AreEqual(2, lJSON.I['QueryParams_Count']);
+    Assert.AreEqual('123', lJSON.S['QueryParams_par1']);
+    Assert.AreEqual('234', lJSON.S['QueryParams_par2']);
+
+  finally
+    lJSON.Free;
+  end;
+
+  lRes := RESTClient.Get('/issues/542?par1&par2=234');
+  lJSON := StrToJSONObject(lRes.Content);
+  try
+    Assert.AreEqual('par1=,par2=234', lJSON.S['QueryStringParams_DelimitedText']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par1'] = jdtString);
+    Assert.AreEqual('', lJSON.S['QueryStringParam_par1']);
+    Assert.IsTrue(lJSON.Types['QueryStringParam_par2'] = jdtString);
+    Assert.AreEqual('234', lJSON.S['QueryStringParam_par2']);
+
+    Assert.AreEqual(2, lJSON.I['QueryParams_Count']);
+    Assert.AreEqual('', lJSON.S['QueryParams_par1']);
+    Assert.AreEqual('234', lJSON.S['QueryParams_par2']);
+
+  finally
+    lJSON.Free;
+  end;
+end;
+
 procedure TServerTest.TestMiddlewareHandler;
 var
   r: IMVCRESTResponse;
@@ -1300,6 +1501,15 @@ begin
   end;
 
   Assert.AreNotEqual('', r.HeaderValue('request_gen_time'));
+end;
+
+procedure TServerTest.TestMultiMVCPathOnControllerAndAction(
+  const URLSegment: string);
+var
+  lRes: IMVCRESTResponse;
+begin
+  lRes := RESTClient.Get(URLSegment);
+  Assert.areEqual(HTTP_STATUS.OK, lRes.StatusCode);
 end;
 
 procedure TServerTest.TestObjectDict;
@@ -2256,7 +2466,7 @@ begin
   lValues[3] := '"daniele teti"';
   lValues[4] := '"daniele" "teti"';
   lValues[5] := '"daniele" "teti"!';
-  lValues[6] := ' _\"daniele" "teti"!_ ';
+  lValues[6] := ' _\"daniele" "teti"!_';
 
   for S in lValues do
   begin
@@ -2264,31 +2474,6 @@ begin
     Assert.areEqual(HTTP_STATUS.OK, res.StatusCode, 'Cannot route when param is [' + S + ']');
     Assert.areEqual('*' + S + '*', res.Content);
   end;
-
-  // res := RESTClient.doGET('/typed/string1/daniele', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('daniele modified from server', res.BodyAsString);
-  //
-  // res := RESTClient.doGET('/typed/string1/dan''iele', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('dan''iele modified from server', res.BodyAsString);
-  //
-  // res := RESTClient.doGET('/typed/string1/"the value"', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('"the value" modified from server', res.BodyAsString);
-  //
-  // res := RESTClient.doGET('/typed/string1/"the:value"', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('"the value" modified from server', res.BodyAsString);
-  //
-  // res := RESTClient.doGET('/typed/string1/"the:value!"', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('"the value" modified from server', res.BodyAsString);
-  //
-  // res := RESTClient.doGET('/typed/string1/"the:value!?"', []);
-  // Assert.isTrue(res.ResponseCode = HTTP_STATUS.OK, 'Cannot route');
-  // Assert.areEqual('"the value" modified from server', res.BodyAsString);
-
 end;
 
 procedure TServerTest.TestTypedTGuid1;
@@ -2778,6 +2963,66 @@ begin
   Assert.areEqual(12, TJDOJsonObject(lRPCResp.Result.AsObject).I['res']);
 end;
 
+procedure TJSONRPCServerTest.TestRequest_Echo_ComplexRecord;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lComplexRecIn, lComplexRecOut: TComplexRecord;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'EchoSingleComplexRecord';
+  lReq.RequestID := 1234;
+  lComplexRecIn := TComplexRecord.Create;
+
+  lReq.Params.Add(TValue.From<TComplexRecord>(lComplexRecIn), pdtRecordOrArrayOfRecord);
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  Assert.IsFalse(lRPCResp.IsError, lRPCResp.AsJSONString);
+  lRPCResp.ResultAsJSONObject.SaveToFile('EchoSingleComplexRecord_RESPONSE.json', False);
+  lComplexRecOut := TJSONUtils.JSONObjectToRecord<TComplexRecord>(lRPCResp);
+  lComplexRecIn.Equals(lComplexRecOut);
+end;
+
+procedure TJSONRPCServerTest.TestRequest_Echo_ComplexRecords;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lComplexRecIn, lComplexRecOut: TComplexRecordArray;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'EchoArrayOfRecords';
+  lReq.RequestID := 1234;
+  SetLength(lComplexRecIn, 2);
+  lComplexRecIn[0] := TComplexRecord.Create;
+  lComplexRecIn[1] := TComplexRecord.Create;
+  lComplexRecIn[0].StringProperty := 'firstone';
+  lComplexRecIn[1].StringProperty := 'secondone';
+
+  lReq.Params.Add(TValue.From<TComplexRecordArray>(lComplexRecIn), pdtRecordOrArrayOfRecord);
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  Assert.IsFalse(lRPCResp.IsError, lRPCResp.AsJSONString);
+  lRPCResp.ResultAsJSONArray.SaveToFile('TestRequest_Echo_ComplexRecords_RESPONSE.json', False);
+  lComplexRecOut := TJSONUtils.JSONArrayToArrayOfRecord<TComplexRecord>(lRPCResp);
+  lComplexRecIn[0].Equals(lComplexRecOut[0]);
+  lComplexRecIn[1].Equals(lComplexRecOut[1]);
+end;
+
+procedure TJSONRPCServerTest.TestRequest_Echo_SingleRecordAsResult;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lSimpleRecIn, lSimpleRec: TSimpleRecord;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'EchoSingleRecord';
+  lReq.RequestID := 1234;
+
+  lSimpleRecIn := TSimpleRecord.Create;
+  lReq.Params.Add(TValue.From<TSimpleRecord>(lSimpleRecIn), pdtRecordOrArrayOfRecord);
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  lSimpleRec := TJSONUtils.JsonObjectToRecord<TSimpleRecord>(lRPCResp);
+  Assert.IsTrue(lSimpleRecIn.Equals(lSimpleRec));
+end;
+
 procedure TJSONRPCServerTest.TestRequest_NamedParams_S_I_ret_S;
 var
   lReq: IJSONRPCRequest;
@@ -2794,6 +3039,91 @@ begin
 
   lRPCResp := FExecutor2.ExecuteRequest(lReq);
   Assert.areEqual('DanieleDanieleDanieleDaniele', lRPCResp.Result.AsString);
+end;
+
+procedure TJSONRPCServerTest.TestRequest_NoParams_DynamicArrayOfRecordAsResult;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lSimpleRecArray: TArray<TSimpleRecord>;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'GetArrayOfRecords';
+  lReq.RequestID := 1234;
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  lSimpleRecArray := TJSONUtils.JSONArrayToArrayOfRecord<TSimpleRecord>(lRPCResp);
+  Assert.AreEqual(3, Length(lSimpleRecArray));
+  Assert.AreEqual(0, lSimpleRecArray[0].IntegerProperty);
+  Assert.AreEqual(1, lSimpleRecArray[1].IntegerProperty);
+  Assert.AreEqual(2, lSimpleRecArray[2].IntegerProperty);
+end;
+
+procedure TJSONRPCServerTest.TestRequest_NoParams_SingleComplexRecordAsResult;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lRec: TComplexRecord;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'GetSingleComplexRecord';
+  lReq.RequestID := 1234;
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  lRec := TJSONUtils.JsonObjectToRecord<TComplexRecord>(lRPCResp);
+
+  //1st level fields
+  Assert.AreEqual('the string property', lRec.StringProperty);
+  Assert.AreEqual(1234, lRec.IntegerProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5), lRec.DateProperty);
+  Assert.AreEqual(EncodeTime(12,13,14,0), lRec.TimeProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5) + EncodeTime(12,13,14,0), lRec.DateTimeProperty, 0.000001);
+  Assert.AreEqual(True, lRec.BooleanProperty);
+  Assert.AreEqual(EnumItem2, lRec.EnumProperty);
+  Assert.IsTrue([EnumItem1, EnumItem3] * lRec.SetProperty = [EnumItem1, EnumItem3]);
+  Assert.IsTrue(lRec.SetProperty - [EnumItem1, EnumItem3] = []);
+
+  //2nd level fields
+  Assert.AreEqual('the string property', lRec.SimpleRecord.StringProperty);
+  Assert.AreEqual(1234, lRec.SimpleRecord.IntegerProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5), lRec.SimpleRecord.DateProperty);
+  Assert.AreEqual(EncodeTime(12,13,14,0), lRec.SimpleRecord.TimeProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5) + EncodeTime(12,13,14,0), lRec.SimpleRecord.DateTimeProperty, 0.000001);
+  Assert.AreEqual(True, lRec.SimpleRecord.BooleanProperty);
+  Assert.AreEqual(EnumItem2, lRec.SimpleRecord.EnumProperty);
+  Assert.IsTrue([EnumItem1, EnumItem3] * lRec.SimpleRecord.SetProperty = [EnumItem1, EnumItem3]);
+  Assert.IsTrue(lRec.SimpleRecord.SetProperty - [EnumItem1, EnumItem3] = []);
+
+  //Dynamic Array Records
+  Assert.AreEqual(2, Length(lRec.SimpleRecordDynArray), 'Wrong size for dynamic array');
+  Assert.AreEqual('1', lRec.SimpleRecordDynArray[0].StringProperty);
+  Assert.AreEqual('2', lRec.SimpleRecordDynArray[1].StringProperty);
+
+  //Static Array Records
+  Assert.AreEqual(3, Length(lRec.SimpleRecordStaticArray), 'Wrong size for static array');
+  Assert.AreEqual('3', lRec.SimpleRecordStaticArray[0].StringProperty);
+  Assert.AreEqual('4', lRec.SimpleRecordStaticArray[1].StringProperty);
+  Assert.AreEqual('5', lRec.SimpleRecordStaticArray[2].StringProperty);
+end;
+
+procedure TJSONRPCServerTest.TestRequest_NoParams_SingleRecordAsResult;
+var
+  lReq: IJSONRPCRequest;
+  lRPCResp: IJSONRPCResponse;
+  lSimpleRec: TSimpleRecord;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'GetSingleRecord';
+  lReq.RequestID := 1234;
+  lRPCResp := FExecutor2.ExecuteRequest(lReq);
+  lSimpleRec := TJSONUtils.JsonObjectToRecord<TSimpleRecord>(lRPCResp);
+  Assert.AreEqual('the string property', lSimpleRec.StringProperty);
+  Assert.AreEqual(1234, lSimpleRec.IntegerProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5), lSimpleRec.DateProperty);
+  Assert.AreEqual(EncodeTime(12,13,14,0), lSimpleRec.TimeProperty);
+  Assert.AreEqual(EncodeDate(2022,7,5) + EncodeTime(12,13,14,0), lSimpleRec.DateTimeProperty, 0.000001);
+  Assert.AreEqual(True, lSimpleRec.BooleanProperty);
+  Assert.AreEqual(EnumItem2, lSimpleRec.EnumProperty);
+  Assert.IsTrue([EnumItem1, EnumItem3] * lSimpleRec.SetProperty = [EnumItem1, EnumItem3]);
+  Assert.IsTrue(lSimpleRec.SetProperty - [EnumItem1, EnumItem3] = []);
 end;
 
 procedure TJSONRPCServerTest.TestRequest_S_I_ret_S;

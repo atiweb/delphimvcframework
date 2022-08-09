@@ -193,6 +193,13 @@ type
     constructor Create(const ClassRef: TClass = nil);
     property ClassRef: TClass read fClassRef;
   end;
+  
+  /// <summary>
+  ///  Use this attribute in the model class to define a field of type TGuid if at the time of attribute serialization the value
+  ///  of the guid field will be obtained without braces.
+  ///  Sample: 61013848-8736-4d8b-ad25-91df4c255561
+  /// </summary>
+  MVCSerializeGuidWithoutBracesAttribute = class(TCustomAttribute);
 
   TMVCSerializerHelper = record
   private
@@ -225,6 +232,7 @@ type
     class function CreateObject(const AQualifiedClassName: string): TObject; overload; static;
     class function IsAPropertyToSkip(const aPropName: string): Boolean; static; inline;
   end;
+
 
   TMVCLinksCallback = reference to procedure(const Links: TMVCStringDictionary);
 
@@ -377,6 +385,9 @@ type
     ['{1FB9E04A-D1D6-4C92-B945-257D81B39A25}']
     procedure ObjectToJsonObject(const AObject: TObject; const AJsonObject: TJDOJsonObject;
       const AType: TMVCSerializationType; const AIgnoredAttributes: TMVCIgnoredList);
+    procedure RecordToJsonObject(const ARecord: Pointer; const ARecordTypeInfo: PTypeInfo;
+      const AJsonObject: TJDOJsonObject;
+      const AType: TMVCSerializationType; const AIgnoredAttributes: TMVCIgnoredList);
     procedure ListToJsonArray(const AList: IMVCList; const AJsonArray: TJDOJsonArray;
       const AType: TMVCSerializationType; const AIgnoredAttributes: TMVCIgnoredList;
       const ASerializationAction: TMVCSerializationAction = nil);
@@ -442,7 +453,12 @@ uses
 
 procedure RaiseSerializationError(const Msg: string);
 begin
-  raise EMVCSerializationException.Create(Msg);
+  raise EMVCSerializationException.Create(Msg) at ReturnAddress;
+end;
+
+procedure RaiseDeSerializationError(const Msg: string);
+begin
+  raise EMVCDeSerializationException.Create(Msg) at ReturnAddress;
 end;
 
 function StrDict: TMVCStringDictionary; overload;
@@ -1068,6 +1084,21 @@ begin
             begin
               aRTTIField.SetValue(AObject, AField.AsString);
             end;
+          tkWideString:
+            begin
+              aRTTIField.SetValue(AObject, AField.AsWideString);
+            end;
+          tkRecord:
+            begin
+              if TypeInfo(TGUID) = aRTTIField.FieldType.Handle then
+              begin
+                aRTTIField.SetValue(AObject, TValue.From<TGUID>(StringToGUID(AField.AsString)));
+              end
+              else
+              begin
+                raise EMVCException.CreateFmt('Unsupported record type: %s.%s', [aRTTIField.Parent.Name, aRTTIField.Name]);
+              end;
+            end;
           tkClass: { mysql - maps a tiny field, identified as string, into a TStream }
             begin
               lInternalStream := aRTTIField.GetValue(AObject).AsObject as TStream;
@@ -1099,7 +1130,16 @@ begin
       end;
     ftInteger, ftSmallint, ftShortint, ftByte:
       begin
-        aRTTIField.SetValue(AObject, AField.AsInteger);
+        // sqlite doesn't support boolean, so are identified as integers
+        // so we need to do some more checks...
+        if (aRTTIField.FieldType.TypeKind = tkEnumeration) and (aRTTIField.Name.ToLower.Contains('bool')) then
+        begin
+          aRTTIField.SetValue(AObject, AField.AsInteger = 1);
+        end
+        else
+        begin
+          aRTTIField.SetValue(AObject, AField.AsInteger);
+        end;
       end;
     ftLongWord, ftWord:
       begin
@@ -1170,8 +1210,19 @@ begin
               end
               else
               begin
-                raise EMVCDeserializationException.Create('Cannot deserialize field ' +
+                RaiseDeSerializationError('Cannot deserialize field ' +
                   AField.FieldName);
+              end;
+            end;
+          tkRecord:
+            begin
+              if TypeInfo(TGUID) = aRTTIField.FieldType.Handle then
+              begin
+                aRTTIField.SetValue(AObject, TValue.From<TGUID>(StringToGUID(AField.AsString)));
+              end
+              else
+              begin
+                raise EMVCException.CreateFmt('Unsupported record type: %s.%s', [aRTTIField.Parent.Name, aRTTIField.Name]);
               end;
             end
         else
@@ -1219,7 +1270,18 @@ begin
     ftGuid:
       begin
 {$IF Defined(TokyoOrBetter)}
-        aRTTIField.SetValue(AObject, TValue.From<TGUID>(AField.AsGuid));
+        if AField.IsNull then
+        begin
+          aRTTIField.SetValue(AObject, TValue.Empty)
+        end
+        else if TypeInfo(NullableTGUID) = aRTTIField.FieldType.Handle then
+        begin
+          aRTTIField.SetValue(AObject, TValue.From<NullableTGUID>(AField.AsGuid));
+        end
+        else
+        begin
+          aRTTIField.SetValue(AObject, TValue.From<TGUID>(AField.AsGuid));
+        end;
 {$ELSE}
         lFieldValue := AField.AsString;
         if lFieldValue.IsEmpty then
@@ -1456,6 +1518,23 @@ begin
     else
     begin
       aRTTIField.SetValue(AObject, TValue.From<NullableCurrency>(AField.AsCurrency));
+    end;
+    Result := True;
+  end
+  else if AValue.IsType(TypeInfo(NullableTGUID)) then
+  begin
+    if AField.IsNull then
+    begin
+      aRTTIField.GetValue(AObject).AsType<NullableTGUID>().Clear;
+    end
+    else
+    begin
+{$IF defined(TOKYOORBETTER)}
+      if AField.DataType = ftGuid then
+        aRTTIField.SetValue(AObject, TValue.From<NullableTGUID>(AField.AsGuid))
+      else
+{$ENDIF}
+        aRTTIField.SetValue(AObject, TValue.From<NullableTGUID>(StringToGUID(AField.AsString)))
     end;
     Result := True;
   end
@@ -1758,6 +1837,9 @@ begin
   inherited Create;
   fClassRef := ClassRef;
 end;
+
+
+
 
 initialization
 

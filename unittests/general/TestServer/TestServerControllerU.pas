@@ -38,7 +38,8 @@ uses
 
 type
 
-  [MVCPath('/')]
+  [MVCPath]
+  [MVCPath('/donotusethis')]
   TTestServerController = class(TMVCController)
   private
     FFormatSettings: TFormatSettings;
@@ -143,6 +144,12 @@ type
     [MVCHTTPMethod([httpPOST])]
     [MVCProduces('application/json')]
     procedure TestCustomerEcho;
+
+    [MVCPath('/customerechobodyfor')]
+    [MVCHTTPMethod([httpPOST])]
+    [MVCProduces('application/json')]
+    procedure TestCustomerEchoBodyFor;
+
 
     [MVCPath('/speed')]
     [MVCHTTPMethod([httpGET])]
@@ -263,6 +270,18 @@ type
     [MVCPath('/issue492/($stringvalue)')]
     procedure GetIssue492;
 
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/issue542/($stringvalue)')]
+    procedure GetIssue542;
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/issue552')]
+    procedure TestIssue552GUIDSupport;
+
+    [MVCHTTPMethod([httpPOST])]
+    [MVCPath('/guidserializationecho')]
+    procedure TestGUIDSerializationEcho;
+
     { injectable parameters }
     [MVCHTTPMethod([httpGET])]
     [MVCPath('/injectable10')]
@@ -329,6 +348,10 @@ type
     [MVCHTTPMethod([httpGET])]
     [MVCPath('/issues/526')]
     procedure TestIssue526;
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/issues/542')]
+    procedure TestIssue542;
   end;
 
   [MVCPath('/private')]
@@ -357,6 +380,17 @@ type
     [MVCPath]
     procedure NeverExecuted;
     constructor Create; override;
+  end;
+
+  [MVCPath]
+  [MVCPath('/api/v1')]
+  [MVCPath('/api/v2')]
+  TTestMultiPathController = class(TMVCController)
+  public
+    [MVCPath]
+    [MVCPath('/action1')]
+    [MVCPath('/action2')]
+    procedure Action1or2;
   end;
 
 implementation
@@ -510,6 +544,11 @@ begin
   // do nothing
 end;
 
+procedure TTestServerController.GetIssue542;
+begin
+  // do nothing
+end;
+
 procedure TTestServerController.GetProject;
 begin
   // do nothing
@@ -528,7 +567,7 @@ procedure TTestServerController.Logout;
 begin
   if not Context.SessionStarted then
     raise EMVCException.Create('Session not available');
-  Context.SessionStop(false);
+  Context.SessionStop;
   if Context.SessionStarted then
     raise EMVCException.Create('Session still available');
 end;
@@ -625,6 +664,24 @@ begin
 {$ENDIF}
   // lCustomer.Logo.SaveToFile('pippo_server_after.bmp');
   Render(lCustomer, True);
+end;
+
+procedure TTestServerController.TestCustomerEchoBodyFor;
+var
+  lCustomer: TCustomer;
+begin
+  lCustomer := TCustomer.Create;
+  try
+    Context.Request.BodyFor<TCustomer>(lCustomer);
+    // lCustomer.Logo.SaveToFile('pippo_server_before.bmp');
+    lCustomer.Name := lCustomer.Name + ' changed';
+  {$IFNDEF LINUX}
+    //lCustomer.Logo.Canvas.TextOut(10, 10, 'Changed');
+  {$ENDIF}
+    Render(lCustomer, False);
+  finally
+    lCustomer.Free;
+  end;
 end;
 
 procedure TTestServerController.TestDeserializeAndSerializeNullables;
@@ -775,6 +832,18 @@ begin
   end;
 end;
 
+procedure TTestServerController.TestGUIDSerializationEcho;
+var
+  lEnt: TEntityWithGUIDs;
+begin
+  lEnt := Context.Request.BodyAs<TEntityWithGUIDs>;
+  try
+    Render(lEnt, False);
+  finally
+    lEnt.Free;
+  end;
+end;
+
 procedure TTestServerController.TestHelloWorld;
 begin
   ContentType := 'text/plain';
@@ -791,6 +860,35 @@ begin
   ContentType := 'application/fhir+xml; fhirVersion=4.0';
   ResponseStream.Append('OK');
   RenderResponseStream;
+end;
+
+procedure TTestServerController.TestIssue542;
+var
+  lJSON: TJDOJSONObject;
+begin
+  lJSON := TJDOJSONObject.Create;
+  try
+    lJSON.S['QueryStringParams_DelimitedText'] := Context.Request.QueryStringParams.DelimitedText;
+    lJSON.S['QueryStringParam_par1'] := Context.Request.QueryStringParam('par1');
+    lJSON.S['QueryStringParam_par2'] := Context.Request.QueryStringParam('par2');
+    lJSON.I['QueryParams_Count'] := Context.Request.QueryParams.Count;
+    lJSON.S['QueryParams_par1'] := Context.Request.QueryParams['par1'];
+    lJSON.S['QueryParams_par2'] := Context.Request.QueryParams['par2'];
+    Render(lJSON, False);
+  finally
+    lJSON.Free;
+  end;
+end;
+
+procedure TTestServerController.TestIssue552GUIDSupport;
+var
+  lObj: TEntityWithGUIDs;
+begin
+  lObj := TEntityWithGUIDs.Create(False);
+  lObj.GUID := StringToGUID('{75ADE43E-F8C1-4F66-B714-D04726FD2C21}');
+  lObj.NullableGUID := StringToGUID('{7B17F2DD-6ED5-40A4-A334-8ED877A6803E}');
+  lObj.NullableGUID2.Clear;
+  Render(lObj);
 end;
 
 procedure TTestServerController.TestJSONArrayAsObjectList;
@@ -1047,6 +1145,13 @@ end;
 procedure TTestFault2Controller.NeverExecuted;
 begin
   // do nothing
+end;
+
+{ TTestMultiPathController }
+
+procedure TTestMultiPathController.Action1or2;
+begin
+  Render(HTTP_STATUS.OK);
 end;
 
 end.
