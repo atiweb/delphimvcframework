@@ -90,6 +90,8 @@ type
     [Test]
     procedure TestCustomerEcho;
     [Test]
+    procedure TestEchoWithAllVerbs;
+    [Test]
     procedure TestCustomerEchoBodyFor;
     [Test]
     procedure TestPOSTWithoutContentType;
@@ -117,6 +119,10 @@ type
     procedure TestEncodingRenderJSONValue;
     [Test]
     procedure TestRenderWrappedList;
+    [Test]
+    procedure TestObjectDictIgnoredFields;
+    [Test]
+    procedure TestObjectDictIgnoredFieldsWithDataSets;
     [Test]
     procedure TestRenderActionInCollections;
     [Test]
@@ -932,6 +938,39 @@ begin
   end;
 end;
 
+procedure TServerTest.TestEchoWithAllVerbs;
+var
+  r: IMVCRESTResponse;
+  lPerson: TPerson;
+  lSer: IMVCSerializer;
+  lNewPerson: TPerson;
+  I: TMVCHTTPMethodType;
+begin
+  lNewPerson := TPerson.Create;
+  try
+    lPerson := TPerson.GetNew('Daniele','Teti', EncodeDate(1979,11,4), True);
+    try
+      lSer := GetDefaultSerializer;
+      for I := httpGET to httpTRACE do
+      begin
+        r := RESTClient
+          .Accept(TMVCMediaType.APPLICATION_JSON)
+          .AddBody(lPerson, False)
+          .Execute(httpGET, '/echowithallverbs');
+        Assert.AreEqual(HTTP_STATUS.OK, r.StatusCode);
+          r.BodyFor(lNewPerson);
+          Assert.IsTrue(lPerson.Equals(lNewPerson),
+            GetEnumName(TypeInfo(TMVCHTTPMethodType),
+              Ord(I)) + ' doesn''t return the same object data');
+      end;
+    finally
+      lPerson.Free;
+    end;
+  finally
+    lNewPerson.Free;
+  end;
+end;
+
 procedure TServerTest.TestEMVCException1;
 var
   res: IMVCRESTResponse;
@@ -944,7 +983,7 @@ begin
     Assert.areEqual<string>('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual<string>('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
     Assert.areEqual<Integer>(500, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual<string>('error', lJSON.S['reasonstring'], lJSON.ToJSON());
+    Assert.areEqual<string>('Internal Server Error', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
   finally
@@ -965,7 +1004,7 @@ begin
     Assert.areEqual<string>('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual<string>('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
     Assert.areEqual<Integer>(HTTP_STATUS.BadRequest, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual<string>('error', lJSON.S['reasonstring'], lJSON.ToJSON());
+    Assert.areEqual<string>('Bad Request', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
   finally
@@ -985,7 +1024,7 @@ begin
     Assert.areEqual('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
     Assert.areEqual(HTTP_STATUS.Created, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual('error', lJSON.S['reasonstring'], lJSON.ToJSON());
+    Assert.areEqual('Created', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(999, lJSON.I['apperrorcode'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
@@ -1007,7 +1046,7 @@ begin
     Assert.areEqual('detailedmessage', lJSON.S['detailedmessage'], lJSON.ToJSON());
     Assert.areEqual('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
     Assert.areEqual(HTTP_STATUS.Created, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual('error', lJSON.S['reasonstring'], lJSON.ToJSON());
+    Assert.areEqual('Created', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(999, lJSON.I['apperrorcode'], lJSON.ToJSON());
     Assert.areEqual(2, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.areEqual('erritem1', lJSON.A['items'].O[0].S['message'], lJSON.ToJSON());
@@ -1575,17 +1614,89 @@ begin
   end;
 end;
 
-// procedure TServerTest.TestPATCHWithParamsAndJSONBody;
-// var
-// r: IMVCRESTResponse;
-// json: TJSONObject;
-// begin
-// json := TJSONObject.Create;
-// json.AddPair('client', 'clientdata');
-// r := RESTClient.doPATCH('/echo', ['1', '2', '3'], json);
-// Assert.AreEqual('clientdata', r.BodyAsJsonObject.Get('client').JsonValue.Value);
-// Assert.AreEqual('from server', r.BodyAsJsonObject.Get('echo').JsonValue.Value);
-// end;
+procedure TServerTest.TestObjectDictIgnoredFields;
+var
+  lRes: IMVCRESTResponse;
+  lJObj: TJsonObject;
+begin
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','Married')
+    .Get('/ignoredfieldstest');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsFalse(lJObj.O['data'].Contains('married'), 'married exists when should not');
+    Assert.IsTrue(lJObj.O['data'].Contains('dob'), 'dob doesn''t exist when should');
+  finally
+    lJObj.Free;
+  end;
+
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','DOB')
+    .Get('/ignoredfieldstest');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsTrue(lJObj.O['data'].Contains('married'), 'married doesn''t exist when should');
+    Assert.IsFalse(lJObj.O['data'].Contains('dob'), 'dob exists when should not');
+  finally
+    lJObj.Free;
+  end;
+
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','DOB,Married')
+    .Get('/ignoredfieldstest');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsFalse(lJObj.O['data'].Contains('married'), 'married exists when should not');
+    Assert.IsFalse(lJObj.O['data'].Contains('dob'), 'dob exists when should not');
+  finally
+    lJObj.Free;
+  end;
+end;
+
+procedure TServerTest.TestObjectDictIgnoredFieldsWithDataSets;
+var
+  lRes: IMVCRESTResponse;
+  lJObj: TJsonObject;
+begin
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','COUNTRY')
+    .Get('/ignoredfieldstestdataset');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsFalse(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('country'),'1');
+    Assert.IsTrue(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('phoneNo'),'2');
+  finally
+    lJObj.Free;
+  end;
+
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','PHONE_NO')
+    .Get('/ignoredfieldstestdataset');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsTrue(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('country'),'3');
+    Assert.IsFalse(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('phoneNo'),'4');
+  finally
+    lJObj.Free;
+  end;
+
+  lRes := RESTClient
+    .AddQueryStringParam('ignoredfieldscsv','COUNTRY,PHONE_NO')
+    .Get('/ignoredfieldstestdataset');
+
+  lJObj := lRes.ToJSONObject;
+  try
+    Assert.IsFalse(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('country'),'5');
+    Assert.IsFalse(lJObj.A['ncCamelCase_List'].Items[0].ObjectValue.Contains('phoneNo'),'6');
+  finally
+    lJObj.Free;
+  end;
+end;
 
 procedure TServerTest.TestPostAListOfObjects;
 var

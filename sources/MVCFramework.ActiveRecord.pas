@@ -322,6 +322,7 @@ type
     constructor Create; overload; virtual;
     destructor Destroy; override;
     procedure EnsureConnection;
+    procedure Assign(ActiveRecord: TMVCActiveRecord); virtual;
     procedure InvalidateConnection(const ReacquireAfterInvalidate: Boolean = false);
     /// <summary>
     /// Executes an Insert (pk is null) or an Update (pk is not null)
@@ -409,6 +410,9 @@ type
   TMVCItemApplyAction<T: TMVCActiveRecord> = reference to procedure(const Obj: T;
     const EntityAction: TMVCEntityAction; var Handled: Boolean);
 
+  TMergeModeItem = (mmInsert, mmUpdate, mmDelete);
+  TMergeMode = set of TMergeModeItem;
+
   IMVCMultiExecutor<T: TMVCActiveRecord> = interface
     ['{C815246B-19CA-4F6C-AA67-8E491F809340}']
     procedure Apply(const ItemApplyAction: TMVCItemApplyAction<T> = nil);
@@ -465,7 +469,7 @@ type
       const Params: array of Variant; const ParamTypes: array of TFieldType;
       const RaiseExceptionIfNotFound: Boolean = True): T; overload;
     class function Merge<T: TMVCActiveRecord>(CurrentList,
-      NewList: TObjectList<T>): IMVCMultiExecutor<T>;
+      NewList: TObjectList<T>; const MergeMode: TMergeMode = [mmInsert, mmUpdate, mmDelete]): IMVCMultiExecutor<T>;
   end;
 
   IMVCEntitiesRegistry = interface
@@ -2033,7 +2037,7 @@ begin
         end
         else
         begin
-          aParam.AsInteger := Ord(aValue.AsInteger);
+          aParam.AsInteger := aValue.AsOrdinal;
         end;
       end;
     tkFloat:
@@ -2690,12 +2694,14 @@ begin
 end;
 
 function TMVCActiveRecord.SQLGenerator: TMVCSQLGenerator;
+var
+  lSQLGeneratorClass: TMVCSQLGeneratorClass;
 begin
   if not Assigned(fSQLGenerator) then
   begin
     GetConnection.Connected := True;
-    fSQLGenerator := TMVCSQLGeneratorRegistry.Instance.GetSQLGenerator(GetBackEnd).Create(GetMapping, fDefaultRQLFilter,
-      GetPartitionInfo);
+    lSQLGeneratorClass := TMVCSQLGeneratorRegistry.Instance.GetSQLGenerator(GetBackEnd);
+    fSQLGenerator := lSQLGeneratorClass.Create(GetMapping, fDefaultRQLFilter, GetPartitionInfo);
   end;
   Result := fSQLGenerator;
 end;
@@ -2846,6 +2852,11 @@ begin
   end;
 end;
 
+procedure TMVCActiveRecord.Assign(ActiveRecord: TMVCActiveRecord);
+begin
+  //do nothing
+end;
+
 class function TMVCActiveRecordHelper.All<T>: TObjectList<T>;
 var
   lAR: TMVCActiveRecord;
@@ -2882,7 +2893,7 @@ begin
   Result := Where<T>(SQLWhere, Params, []);
 end;
 
-class function TMVCActiveRecordHelper.Merge<T>(CurrentList, NewList: TObjectList<T>): IMVCMultiExecutor<T>;
+class function TMVCActiveRecordHelper.Merge<T>(CurrentList, NewList: TObjectList<T>; const MergeMode: TMergeMode): IMVCMultiExecutor<T>;
 var
   I: Integer;
   lFoundAtIndex: Integer;
@@ -2893,7 +2904,10 @@ var
   lNeedsToBeUpdated: Boolean;
 begin
   lUnitOfWork := TMVCUnitOfWork<T>.Create;
-  lUnitOfWork.RegisterDelete(CurrentList);
+  if mmDelete in MergeMode then
+  begin
+    lUnitOfWork.RegisterDelete(CurrentList);
+  end;
   if NewList.Count > 0 then
   begin
     lPKType := NewList[0].GetPrimaryKeyFieldType;
@@ -2901,7 +2915,10 @@ begin
     begin
       if NewList[I].PKIsNull then
       begin
-        lUnitOfWork.RegisterInsert(NewList[I]);
+        if mmInsert in MergeMode then
+        begin
+          lUnitOfWork.RegisterInsert(NewList[I]);
+        end;
         Continue;
       end;
 
@@ -2920,13 +2937,23 @@ begin
             lNeedsToBeUpdated := TMVCUnitOfWork<T>.KeyExistsInt64(CurrentList, NewList[I].GetPK.AsInt64, lFoundAtIndex);
           end;
       else
-        raise EMVCActiveRecord.Create('Invalid primary key type');
+        raise EMVCActiveRecord.Create('Invalid primary key type for merge');
       end;
 
       if lNeedsToBeUpdated then
-        lUnitOfWork.RegisterUpdate(NewList[I])
+      begin
+        if mmUpdate in MergeMode then
+        begin
+          lUnitOfWork.RegisterUpdate(NewList[I])
+        end;
+      end
       else
-        lUnitOfWork.RegisterInsert(NewList[I]);
+      begin
+        if mmInsert in MergeMode then
+        begin
+          lUnitOfWork.RegisterInsert(NewList[I]);
+        end;
+      end;
     end;
   end;
   Result := lUnitOfWork as IMVCMultiExecutor<T>;
@@ -3508,7 +3535,7 @@ end;
 
 constructor TMVCUnitOfWork<T>.Create;
 begin
-  inherited;
+  inherited Create;
   fListToDelete := TObjectList<T>.Create(false);
   fListToUpdate := TObjectList<T>.Create(false);
   fListToInsert := TObjectList<T>.Create(false);
@@ -3722,7 +3749,7 @@ begin
           if Length(lItems) <> 3 then
           begin
             raise EMVCActiveRecord.Create('Invalid partitioning clause: ' + lPiece +
-              '. [HINT] Paritioning must be in the form: "[fieldname1=(integer|string)value1]"');
+              '. [HINT] Partioning must be in the form: "[fieldname1=(integer|string)value1]"');
           end;
 
           Result.FieldNames.Add(lItems[0]);

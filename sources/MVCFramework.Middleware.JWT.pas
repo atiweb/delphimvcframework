@@ -35,7 +35,8 @@ uses
   MVCFramework,
   MVCFramework.Commons,
   MVCFramework.JWT,
-  JsonDataObjects;
+  JsonDataObjects,
+  MVCFramework.HMAC;
 
 type
   TMVCJWTDefaults = class sealed
@@ -71,6 +72,7 @@ type
     FAuthorizationHeaderName: string;
     FUserNameHeaderName: string;
     FPasswordHeaderName: string;
+    FHMACAlgorithm: String;
   protected
     function NeedsToBeExtended(const JWTValue: TJWT): Boolean;
     procedure ExtendExpirationTime(const JWTValue: TJWT);
@@ -79,24 +81,18 @@ type
     procedure OnBeforeRouting(AContext: TWebContext; var AHandled: Boolean); virtual;
     procedure OnBeforeControllerAction(AContext: TWebContext; const AControllerQualifiedClassName: string;
       const AActionName: string; var AHandled: Boolean); virtual;
-    procedure OnAfterControllerAction(AContext: TWebContext; const AActionName: string; const AHandled: Boolean); virtual;
+    procedure OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean); virtual;
     procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean); virtual;
   public
-    /// <remarks>
-    /// WARNING! The AAuthorizationHeaderName, AUserNameHeaderName, and APasswordHeaderName parameters do not follow
-    /// the IETF national convention - RFC 6750;
-    /// Please use the other constructor!
-    /// </remarks>
-    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler; AConfigClaims: TJWTClaimsSetup;
-      ASecret: string = 'D3lph1MVCFram3w0rk'; ALoginURLSegment: string = '/login';
-      AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300;
-      AAuthorizationHeaderName: string = TMVCJWTDefaults.AUTHORIZATION_HEADER;
-      AUserNameHeaderName: string = TMVCJWTDefaults.USERNAME_HEADER;
-      APasswordHeaderName: string = TMVCJWTDefaults.PASSWORD_HEADER); overload; virtual;
-      deprecated 'Issue #244: IETF (RFC-6750) - This constructor will be removed soon, please use the new one';
-    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler; ASecret: string = 'D3lph1MVCFram3w0rk';
-      ALoginURLSegment: string = '/login'; AConfigClaims: TJWTClaimsSetup = nil;
-      AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300); overload; virtual;
+    constructor Create(AAuthenticationHandler: IMVCAuthenticationHandler;
+      AConfigClaims: TJWTClaimsSetup;
+      ASecret: string = 'D3lph1MVCFram3w0rk';
+      ALoginURLSegment: string = '/login';
+      AClaimsToCheck: TJWTCheckableClaims = [];
+      ALeewaySeconds: Cardinal = 300;
+      AHMACAlgorithm: String = HMAC_HS512); overload; virtual;
     property AuthorizationHeaderName: string read FAuthorizationHeaderName;
     property UserNameHeaderName: string read FUserNameHeaderName;
     property PasswordHeaderName: string read FPasswordHeaderName;
@@ -126,9 +122,8 @@ type
 
     procedure OnAfterControllerAction(
       AContext: TWebContext;
-      const AActionName: string;
-      const AHandled: Boolean
-      );
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 
     procedure OnAfterRouting(
       AContext: TWebContext;
@@ -152,28 +147,14 @@ uses
 
 { TMVCJWTAuthenticationMiddleware }
 
-constructor TMVCJWTAuthenticationMiddleware.Create(AAuthenticationHandler: IMVCAuthenticationHandler;
-  AConfigClaims: TJWTClaimsSetup; ASecret: string = 'D3lph1MVCFram3w0rk'; ALoginURLSegment: string = '/login';
-  AClaimsToCheck: TJWTCheckableClaims = []; ALeewaySeconds: Cardinal = 300;
-  AAuthorizationHeaderName: string = TMVCJWTDefaults.AUTHORIZATION_HEADER;
-  AUserNameHeaderName: string = TMVCJWTDefaults.USERNAME_HEADER;
-  APasswordHeaderName: string = TMVCJWTDefaults.PASSWORD_HEADER);
-begin
-  inherited Create;
-  FAuthenticationHandler := AAuthenticationHandler;
-  FSetupJWTClaims := AConfigClaims;
-  FClaimsToChecks := AClaimsToCheck;
-  FSecret := ASecret;
-  FLoginURLSegment := ALoginURLSegment;
-  FLeewaySeconds := ALeewaySeconds;
-  FAuthorizationHeaderName := AAuthorizationHeaderName;
-  FUserNameHeaderName := AUserNameHeaderName;
-  FPasswordHeaderName := APasswordHeaderName;
-end;
-
-constructor TMVCJWTAuthenticationMiddleware.Create(AAuthenticationHandler: IMVCAuthenticationHandler;
-  ASecret, ALoginURLSegment: string; AConfigClaims: TJWTClaimsSetup; AClaimsToCheck: TJWTCheckableClaims;
-  ALeewaySeconds: Cardinal);
+constructor TMVCJWTAuthenticationMiddleware.Create(
+  AAuthenticationHandler: IMVCAuthenticationHandler;
+  AConfigClaims: TJWTClaimsSetup;
+  ASecret, ALoginURLSegment: string;
+  AClaimsToCheck: TJWTCheckableClaims;
+  ALeewaySeconds: Cardinal;
+  AHMACAlgorithm: String
+  );
 begin
   inherited Create;
   FAuthenticationHandler := AAuthenticationHandler;
@@ -185,6 +166,7 @@ begin
   FAuthorizationHeaderName := TMVCJWTDefaults.AUTHORIZATION_HEADER;
   FUserNameHeaderName := TMVCJWTDefaults.USERNAME_HEADER;
   FPasswordHeaderName := TMVCJWTDefaults.PASSWORD_HEADER;
+  FHMACAlgorithm := AHMACAlgorithm;
 end;
 
 procedure TMVCJWTAuthenticationMiddleware.ExtendExpirationTime(const JWTValue: TJWT);
@@ -224,8 +206,9 @@ begin
   Result := lWillExpireIn <= JWTValue.LiveValidityWindowInSeconds;
 end;
 
-procedure TMVCJWTAuthenticationMiddleware.OnAfterControllerAction(AContext: TWebContext; const AActionName: string;
-  const AHandled: Boolean);
+procedure TMVCJWTAuthenticationMiddleware.OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 begin
   // Implement as needed
 end;
@@ -496,8 +479,10 @@ begin
   Assert(not fBlackListRequestURLSegment.IsEmpty);
 end;
 
-procedure TMVCJWTBlackListMiddleware.OnAfterControllerAction(AContext: TWebContext;
-  const AActionName: string; const AHandled: Boolean);
+procedure TMVCJWTBlackListMiddleware.OnAfterControllerAction(
+      AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 begin
   // Implement as needed
 end;

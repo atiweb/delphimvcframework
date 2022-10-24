@@ -150,6 +150,10 @@ type
     [MVCProduces('application/json')]
     procedure TestCustomerEchoBodyFor;
 
+    [MVCPath('/echowithallverbs')]
+    [MVCHTTPMethod([httpGET, httpPOST, httpPUT, httpDELETE, httpPATCH, httpTRACE])]
+    [MVCProduces('application/json')]
+    procedure TestWithAllVerbs;
 
     [MVCPath('/speed')]
     [MVCHTTPMethod([httpGET])]
@@ -334,6 +338,16 @@ type
     [MVCHTTPMethod([httpPOST])]
     [MVCPath('/programmerex2')]
     procedure CreateProgrammerEx2(const [MVCFromBody] ProgrammerEx2: TProgrammerEx2);
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/ignoredfieldstest')]
+    procedure RenderProgrammerWithIgnoredFields(
+      const [MVCFromQueryString('ignoredfieldscsv','')] IgnoredFieldsCSV: String);
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/ignoredfieldstestdataset')]
+    procedure RenderDataSetWithIgnoredFields(
+      const [MVCFromQueryString('ignoredfieldscsv','')] IgnoredFieldsCSV: String);
 
     { templates }
     [MVCHTTPMethod([httpGET])]
@@ -609,6 +623,36 @@ procedure TTestServerController.PostInject50(
   const People: TObjectList<TPerson>);
 begin
   Render<TPerson>(People, False);
+end;
+
+procedure TTestServerController.RenderDataSetWithIgnoredFields(
+  const IgnoredFieldsCSV: String);
+var
+  lDict: IMVCObjectDictionary;
+  lIgnoredFields: TMVCIgnoredList;
+begin
+  lIgnoredFields := TMVCIgnoredList(IgnoredFieldsCSV.Split([';',',']));
+  lDict := ObjectDict(True)
+    .Add('ncUpperCase_List', GetDataSet, nil, dstAllRecords, ncUpperCase, lIgnoredFields)
+    .Add('ncLowerCase_List', GetDataSet, nil, dstAllRecords, ncLowerCase, lIgnoredFields)
+    .Add('ncCamelCase_List', GetDataSet, nil, dstAllRecords, ncCamelCase, lIgnoredFields)
+    .Add('ncPascalCase_List', GetDataSet, nil, dstAllRecords, ncPascalCase, lIgnoredFields)
+    .Add('ncUpperCase_Single', GetDataSet, nil, dstSingleRecord, ncUpperCase, lIgnoredFields)
+    .Add('ncLowerCase_Single', GetDataSet, nil, dstSingleRecord, ncLowerCase, lIgnoredFields)
+    .Add('ncCamelCase_Single', GetDataSet, nil, dstSingleRecord, ncCamelCase, lIgnoredFields)
+    .Add('ncPascalCase_Single', GetDataSet, nil, dstSingleRecord, ncPascalCase, lIgnoredFields)
+    .Add('meta', StrDict(['page'], ['1']));
+  Render(lDict);
+end;
+
+procedure TTestServerController.RenderProgrammerWithIgnoredFields(
+  const IgnoredFieldsCSV: String);
+begin
+  Render(ObjectDict().Add(
+    'data',
+    TProgrammerEx.GetNew('Daniele','Teti', EncodeDate(1979,11,4),True),
+    nil,
+    TMVCIgnoredList(IgnoredFieldsCSV.Split([';',',']))))
 end;
 
 procedure TTestServerController.ReqWithParams;
@@ -1079,6 +1123,15 @@ procedure TTestServerController.TestTypedActionTTime1(value: TTime);
 begin
   ContentType := TMVCMediaType.TEXT_PLAIN;
   Render(TimeToISOTime(value) + ' modified from server');
+end;
+
+procedure TTestServerController.TestWithAllVerbs;
+var
+  lPerson: TPerson;
+begin
+  lPerson := Context.Request.BodyAs<TPerson>();
+  // lCustomer.Logo.SaveToFile('pippo_server_before.bmp');
+  Render(lPerson, True);
 end;
 
 procedure TTestServerController.Tmpl_ListOfDataUsingDatasets;

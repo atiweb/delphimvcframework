@@ -89,7 +89,9 @@ type
     procedure OnBeforeControllerAction(AContext: TWebContext; const AControllerQualifiedClassName: string;
       const AActionName: string; var AHandled: Boolean);
 
-    procedure OnAfterControllerAction(AContext: TWebContext; const AActionName: string; const AHandled: Boolean);
+    procedure OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 
     procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
   end;
@@ -97,9 +99,11 @@ type
 implementation
 
 uses
+  MVCFramework.Logger,
   System.SysUtils,
   System.NetEncoding,
-  System.IOUtils, System.Classes;
+  System.IOUtils,
+  System.Classes;
 
 { TMVCStaticFilesMiddleware }
 
@@ -169,13 +173,9 @@ begin
   begin
     raise EMVCException.Create('StaticFilePath must begin with "/" and cannot be empty');
   end;
-//  if fStaticFilesPath = '/' then
-//  begin
-//    raise EMVCException.Create('StaticFilePath cannot be "/"');
-//  end;
   if not TDirectory.Exists(fDocumentRoot) then
   begin
-    raise EMVCException.CreateFmt('DocumentRoot [%s] is not a valid directory', [fDocumentRoot]);
+    raise EMVCException.CreateFmt('TMVCStaticFilesMiddleware Error: DocumentRoot [%s] is not a valid directory', [fDocumentRoot]);
   end;
   fSanityCheckOK := True;
 end;
@@ -187,8 +187,9 @@ end;
 // AIsDirectoryTraversalAttach);
 // end;
 
-procedure TMVCStaticFilesMiddleware.OnAfterControllerAction(AContext: TWebContext; const AActionName: string;
-  const AHandled: Boolean);
+procedure TMVCStaticFilesMiddleware.OnAfterControllerAction(AContext: TWebContext;
+      const AControllerQualifiedClassName: string; const AActionName: string;
+      const AHandled: Boolean);
 begin
   // do nothing
 end;
@@ -213,10 +214,10 @@ var
   lRealFileName: string;
   lAllow: Boolean;
 begin
-  if not fSanityCheckOK then
-  begin
-    DoSanityCheck;
-  end;
+//  if not fSanityCheckOK then
+//  begin
+//    DoSanityCheck;
+//  end;
 
   lPathInfo := AContext.Request.PathInfo;
 
@@ -264,6 +265,11 @@ begin
 
   { Now the actual requested path is in lFullPathInfo }
 
+  if not fSanityCheckOK then
+  begin
+    DoSanityCheck;
+  end;
+
   if TMVCStaticContents.IsStaticFile(fDocumentRoot, lPathInfo, lRealFileName,
     lIsDirectoryTraversalAttach) then
   begin
@@ -279,7 +285,9 @@ begin
 
     AHandled := SendStaticFileIfPresent(AContext, lRealFileName);
     if AHandled then
+    begin
       Exit;
+    end;
   end;
 
   // check if a directory request
@@ -331,6 +339,10 @@ begin
     end;
     TMVCStaticContents.SendFile(AFileName, lContentType, AContext);
     Result := True;
+    Log(TLogLevel.levDebug, AContext.Request.HTTPMethodAsString + ':' +
+      AContext.Request.PathInfo + ' [' + AContext.Request.ClientIp + '] -> ' +
+      ClassName + ' - ' + IntToStr(AContext.Response.StatusCode) + ' ' +
+      AContext.Response.ReasonString);
   end;
 end;
 
