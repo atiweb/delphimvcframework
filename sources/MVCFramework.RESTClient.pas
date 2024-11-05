@@ -1,13 +1,13 @@
-// ***************************************************************************
+ï»¿// ***************************************************************************
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
 // Collaborators on this file:
-// João Antônio Duarte (https://github.com/joaoduarte19)
+// Joï¿½o Antï¿½nio Duarte (https://github.com/joaoduarte19)
 //
 // ***************************************************************************
 //
@@ -46,7 +46,8 @@ uses
   MVCFramework.RESTClient.Commons,
   MVCFramework.Serializer.Intf,
   MVCFramework.Serializer.Commons,
-  Data.DB, JsonDataObjects;
+  Data.DB,
+  JsonDataObjects;
 
 type
   /// <summary>
@@ -98,6 +99,7 @@ type
     fBeforeRequestProc: TBeforeRequestProc;
     fRequestCompletedProc: TRequestCompletedProc;
     fResponseCompletedProc: TResponseCompletedProc;
+    fSendDataProc: TSendDataProc;
     [Weak] fClientCertificate: TStream;
     fClientCertPassword: string;
     fClientCertPath: string;
@@ -108,6 +110,9 @@ type
     procedure DoBeforeRequest(aRequest: IHTTPRequest);
     procedure DoRequestCompleted(aResponse: IHTTPResponse; var aHandled: Boolean);
     procedure DoResponseCompleted(aMVCRESTResponse: IMVCRESTResponse);
+{$IF defined(SYDNEYORBETTER)}
+    procedure DoOnSendDataEvent(const Sender: TObject; AContentLength, AWriteCount: Int64; var AAbort: Boolean);
+{$ENDIF}
     function GetBodyFormData: TMultipartFormData;
     function ObjectIsList(aObject: TObject): Boolean;
     function SerializeObject(aObject: TObject): string;
@@ -151,6 +156,8 @@ type
     function ProxyUsername: string; overload;
     function ProxyPassword(const aProxyPassword: string): IMVCRESTClient; overload;
     function ProxyPassword: string; overload;
+    function ProxyScheme(const aProxyScheme: string): IMVCRESTClient; overload;
+    function ProxyScheme: string; overload;
 
 {$IF defined(TOKYOORBETTER)}
     function SecureProtocols(const aSecureProtocols: THTTPSecureProtocols): IMVCRESTClient; overload;
@@ -181,6 +188,13 @@ type
     /// Executes after the response is processed.
     /// </summary>
     function SetResponseCompletedProc(aResponseCompletedProc: TResponseCompletedProc): IMVCRESTClient;
+
+    /// <summary>
+    /// Executes while sending data
+    /// </summary>
+    {$IF defined(SYDNEYORBETTER)}
+    function SetSendDataProc(aSendDataProc: TSendDataProc): IMVCRESTClient;
+    {$ENDIF}
 
     ///<summary>
     /// Set the client certificate for the request</summary>
@@ -379,6 +393,10 @@ type
     /// </param>
     function AddFile(const aName, aFileName: string; const aContentType: string = ''): IMVCRESTClient; overload;
     function AddFile(const aFileName: string; const aContentType: string = ''): IMVCRESTClient; overload;
+{$IF defined(RIOORBETTER)}
+    function AddFile(const aName: string; aFileStreamValue: TStream; const aFileName: string = '';
+      const aContentType: string = ''): IMVCRESTClient; overload;
+{$ENDIF}
 
     function AddBodyFieldFormData(const aName, aValue: string): IMVCRESTClient; overload;
 {$IF defined(RIOORBETTER)}
@@ -518,6 +536,7 @@ type
     fContentLength: Integer;
     fContent: string;
     fContentRawBytes: TBytes;
+    fContentAvailableAsString: Boolean;
 
     procedure FillResponse(const aHTTPResponse: IHTTPResponse);
   public
@@ -531,7 +550,7 @@ type
     function Headers: TStrings;
     function HeaderValue(const aName: string): string;
     function Cookies: TCookies;
-    function CookieByName(const aName: string): TCookie;
+    function CookieByName(const aName: string; const RaiseExceptionIfNotFound: Boolean = False): TCookie;
     function Server: string;
     function ContentType: string;
     function ContentEncoding: string;
@@ -663,7 +682,11 @@ function TMVCRESTClient.AddBodyFieldFormData(const aName: string; aStreamValue: 
   const aContentType: string): IMVCRESTClient;
 begin
   Result := Self;
-  GetBodyFormData.AddStream(aName, aStreamValue, aContentType);
+  {$IF Defined(ATHENSORBETTER)}
+  GetBodyFormData.AddStream(aName, aStreamValue, False, '', aContentType);
+  {$ELSE}
+  GetBodyFormData.AddStream(aName, aStreamValue, '', aContentType);
+  {$ENDIF}
   SetContentType(TMVCMediaType.MULTIPART_FORM_DATA);
 end;
 {$ENDIF}
@@ -693,6 +716,19 @@ begin
   GetBodyFormData.AddFile(aName, aFileName {$IF defined(RIOORBETTER)}, aContentType{$ENDIF});
   SetContentType(TMVCMediaType.MULTIPART_FORM_DATA);
 end;
+
+{$IF defined(RIOORBETTER)}
+function TMVCRESTClient.AddFile(const aName: string; aFileStreamValue: TStream; const aFileName, aContentType: string): IMVCRESTClient;
+begin
+  Result := Self;
+  {$IF Defined(ATHENSORBETTER)}
+  GetBodyFormData.AddStream(aName, aFileStreamValue, False, aFileName, aContentType);
+  {$ELSE}
+  GetBodyFormData.AddStream(aName, aFileStreamValue, aFileName, aContentType);
+  {$ENDIF}
+  SetContentType(TMVCMediaType.MULTIPART_FORM_DATA);
+end;
+{$ENDIF}
 
 function TMVCRESTClient.AddHeader(const aName, aValue: string): IMVCRESTClient;
 begin
@@ -926,6 +962,9 @@ begin
   fHTTPClient.OnValidateServerCertificate := DoValidateServerCertificate;
   fHTTPClient.HandleRedirects := True;
   fHTTPClient.MaxRedirects := TMVCRESTClientConsts.DEFAULT_MAX_REDIRECTS;
+{$IF defined(SYDNEYORBETTER)}
+  fHTTPClient.OnSendData := DoOnSendDataEvent;
+{$ENDIF}
 {$IF defined(TOKYOORBETTER)}
   fHTTPClient.SecureProtocols := CHTTPDefSecureProtocols;
 {$ENDIF}
@@ -934,12 +973,12 @@ begin
   fBeforeRequestProc := nil;
   fRequestCompletedProc := nil;
   fResponseCompletedProc := nil;
+  fSendDataProc := nil;
   fParameters := TList<TMVCRESTParam>.Create;
   fRawBody := TMemoryStream.Create;
   fBodyFormData := nil;
   fSerializer := nil;
   fRttiContext := TRttiContext.Create;
-  fProxySettings := TProxySettings.Create('', 0);
   fLock := TObject.Create;
   fBaseURL := '';
   fResource := '';
@@ -1487,6 +1526,17 @@ begin
   Result := fRttiContext.GetType(aObject.ClassType).GetMethod('GetEnumerator') <> nil;
 end;
 
+{$IF defined(SYDNEYORBETTER)}
+procedure TMVCRESTClient.DoOnSendDataEvent(const Sender: TObject; AContentLength,
+  AWriteCount: Int64; var AAbort: Boolean);
+begin
+  if Assigned(fSendDataProc) then
+  begin
+    fSendDataProc(AContentLength, AWriteCount, AAbort);
+  end;
+end;
+{$ENDIF}
+
 function TMVCRESTClient.Options: IMVCRESTResponse;
 begin
   Result := ExecuteRequest(TMVCHTTPMethodType.httpOPTIONS);
@@ -1588,6 +1638,17 @@ function TMVCRESTClient.ProxyServer(const aProxyServer: string): IMVCRESTClient;
 begin
   Result := Self;
   fProxySettings.Host := aProxyServer;
+end;
+
+function TMVCRESTClient.ProxyScheme: string;
+begin
+  Result := fProxySettings.Scheme;
+end;
+
+function TMVCRESTClient.ProxyScheme(const aProxyScheme: string): IMVCRESTClient;
+begin
+  fProxySettings.Scheme := aProxyScheme;
+  Result := Self;
 end;
 
 function TMVCRESTClient.ProxyServer: string;
@@ -1843,6 +1904,14 @@ begin
   fResponseCompletedProc := aResponseCompletedProc;
 end;
 
+{$IF Defined(SYDNEYORBETTER)}
+function TMVCRESTClient.SetSendDataProc(
+  aSendDataProc: TSendDataProc): IMVCRESTClient;
+begin
+  fSendDataProc := aSendDataProc;
+end;
+{$ENDIF}
+
 function TMVCRESTClient.SetValidateServerCertificateProc(
   aValidateCertificateProc: TValidateServerCertificateProc): IMVCRESTClient;
 begin
@@ -1864,26 +1933,31 @@ end;
 
 function TMVCRESTResponse.ToJSONArray: TJDOJsonArray;
 begin
-  Result := StrTOJSONArray(fContent, True);
+  Result := StrTOJSONArray(Content, True);
 end;
 
 function TMVCRESTResponse.ToJSONObject: TJDOJsonObject;
 begin
-  Result := StrTOJSONObject(fContent, True);
+  Result := StrTOJSONObject(Content, True);
 end;
 
 procedure TMVCRESTResponse.BodyFor(const aObject: TObject; const aRootNode: string);
 begin
-  fRESTClient.Serializer.DeserializeObject(fContent, aObject, TMVCSerializationType.stDefault, [], aRootNode);
+  fRESTClient.Serializer.DeserializeObject(Content, aObject, TMVCSerializationType.stDefault, [], aRootNode);
 end;
 
 procedure TMVCRESTResponse.BodyForListOf(const aObjectList: TObject; const aObjectClass: TClass; const aRootNode: string);
 begin
-  fRESTClient.Serializer.DeserializeCollection(fContent, aObjectList, aObjectClass, TMVCSerializationType.stDefault, [], aRootNode);
+  fRESTClient.Serializer.DeserializeCollection(Content, aObjectList, aObjectClass, TMVCSerializationType.stDefault, [], aRootNode);
 end;
 
 function TMVCRESTResponse.Content: string;
 begin
+  if not fContentAvailableAsString then
+  begin
+    fContent := TMVCRESTClientHelper.GetResponseContentAsString(fContentRawBytes, fContentType);
+    fContentAvailableAsString := True;
+  end;
   Result := fContent;
 end;
 
@@ -1902,7 +1976,7 @@ begin
   Result := fContentType;
 end;
 
-function TMVCRESTResponse.CookieByName(const aName: string): TCookie;
+function TMVCRESTResponse.CookieByName(const aName: string; const RaiseExceptionIfNotFound: Boolean): TCookie;
 var
   lCookie: TCookie;
 begin
@@ -1912,6 +1986,11 @@ begin
     if SameText(lCookie.Name, aName) then
       Exit(lCookie);
   end;
+  if RaiseExceptionIfNotFound then
+  begin
+    raise EMVCRESTClientException.CreateFmt('Cookie "%s" not found', [aName]);
+  end;
+
 end;
 
 function TMVCRESTResponse.Cookies: TCookies;
@@ -1925,7 +2004,7 @@ begin
   SetLength(fContentRawBytes, 0);
   fCookies := TCookies.Create;
   fRESTClient := aRESTClient;
-
+  fContentAvailableAsString := False;
   FillResponse(aHTTPResponse);
 end;
 
@@ -1953,11 +2032,11 @@ begin
   fServer := aHTTPResponse.HeaderValue[TMVCRESTClientConsts.SERVER_HEADER];
   fContentRawBytes := TMVCRESTClientHelper.GetResponseContentAsRawBytes(aHTTPResponse.ContentStream,
     aHTTPResponse.ContentEncoding);
-  fContent := TMVCRESTClientHelper.GetResponseContentAsString(fContentRawBytes,
-    aHTTPResponse.HeaderValue[sContentType]);
+  fContent := '';
   fContentType := aHTTPResponse.HeaderValue[sContentType];
   fContentEncoding := aHTTPResponse.ContentEncoding;
   fContentLength := aHTTPResponse.ContentLength;
+  fContentAvailableAsString := False;
 end;
 
 function TMVCRESTResponse.Headers: TStrings;
@@ -1977,23 +2056,20 @@ end;
 
 procedure TMVCRESTResponse.SaveContentToFile(const aFileName: string);
 var
-  lStream: TMemoryStream;
+  lStream: TFileStream;
 begin
-  lStream := TMemoryStream.Create;
+  lStream := TFileStream.Create(aFileName, fmCreate or fmOpenWrite);
   try
-    lStream.Write(fContentRawBytes, Length(fContentRawBytes));
-    lStream.Position := 0;
-    lStream.SaveToFile(aFileName);
+    SaveContentToStream(lStream);
   finally
-    FreeAndNil(lStream);
+    lStream.Free;
   end;
 end;
 
 procedure TMVCRESTResponse.SaveContentToStream(aStream: TStream);
 begin
   if aStream = nil then
-    raise EMVCRESTClientException.Create('Stream not assigned!');
-
+    raise EMVCRESTClientException.Create('Stream not assigned');
   aStream.Write(fContentRawBytes, Length(fContentRawBytes));
 end;
 

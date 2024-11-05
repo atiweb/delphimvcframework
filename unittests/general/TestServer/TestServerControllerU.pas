@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -34,7 +34,8 @@ uses
   FireDAC.Comp.Client,
   System.Generics.Collections,
   Data.DB,
-  BusinessObjectsU;
+  BusinessObjectsU, MVCFramework.Serializer.Commons, System.Classes,
+  System.UITypes;
 
 type
 
@@ -46,9 +47,10 @@ type
     fDataSet: TFDMemTable;
   protected
     procedure MVCControllerAfterCreate; override;
-    function GetDataSet: TDataSet;
     procedure MVCControllerBeforeDestroy; override;
   public
+    class function GetDataSet: TDataSet;
+
     [MVCPath('/req/with/params/($par1)/($par2)/($par3)')]
     [MVCHTTPMethod([httpGET, httpDELETE])]
     procedure ReqWithParams;
@@ -144,6 +146,11 @@ type
     [MVCHTTPMethod([httpPOST])]
     [MVCProduces('application/json')]
     procedure TestCustomerEcho;
+
+    [MVCPath('/customerecho2')]
+    [MVCHTTPMethod([httpPOST])]
+    [MVCProduces('application/json')]
+    procedure TestCustomerEchoWithRootNode;
 
     [MVCPath('/customerechobodyfor')]
     [MVCHTTPMethod([httpPOST])]
@@ -366,6 +373,21 @@ type
     [MVCHTTPMethod([httpGET])]
     [MVCPath('/issues/542')]
     procedure TestIssue542;
+
+    {sqids}
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/sqids/stoi/($id:sqids)')]
+    function TestReceiveSqidAsInteger(id: Int64): Int64;
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/sqids/itos/($id)')]
+    function TestReceiveIntegerAndReturnSqid(id: Int64): String;
+
+    {invalid converter}
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/wrongconverter/($id:blablabla)')]
+    function TestInvalidConverter(id: Int64): Int64;
+
   end;
 
   [MVCPath('/private')]
@@ -407,6 +429,135 @@ type
     procedure Action1or2;
   end;
 
+
+// action result types
+  [MVCNameCase(ncLowerCase)]
+  TSum = class
+  private
+    fValue: Integer;
+  public
+    property Value: Integer read fValue write fValue;
+  end;
+
+  [MVCNameCase(ncLowerCase)]
+  TComplexObject = class
+  private
+    fValue: Integer;
+    FPeople: TPeople;
+    FPerson: TPerson;
+    procedure SetPeople(const Value: TPeople);
+    procedure SetPerson(const Value: TPerson);
+  public
+    destructor Destroy; override;
+    property Value: Integer read fValue write fValue;
+    property Person: TPerson read FPerson write SetPerson;
+    property People: TPeople read FPeople write SetPeople;
+  end;
+
+  [MVCNameCase(ncCamelCase)]
+  TPersonRec = record
+    FirstName, LastName: String;
+    Age: Integer;
+    class function Create: TPersonRec; static;
+  end;
+// action result types - end
+
+  [MVCPath('/api/v1/actionresult')]
+  TTestActionResultController = class(TMVCController)
+  public
+    { actions returning records }
+    [MVCPath('/sums/($a)/($b)')]
+    [MVCHTTPMethod([httpGET])]
+    function GetObject(a,b: Integer): TSum;
+
+    [MVCPath('/records/single')]
+    function GetSingleRecord: TPersonRec;
+
+    [MVCPath('/records/multiple')]
+    function GetMultipleRecords: TArray<TPersonRec>;
+
+    [MVCPath('/complex')]
+    [MVCHTTPMethod([httpGET])]
+    function GetComplexObject: TComplexObject;
+
+    [MVCPath('/people')]
+    [MVCHTTPMethod([httpGET])]
+    function GetPeople: TObjectList<TPerson>;
+
+    [MVCPath('/people/($id)')]
+    [MVCHTTPMethod([httpGET])]
+    function GetPerson(id: Integer): IPerson;
+
+    [MVCPath('/photo')]
+    [MVCHTTPMethod([httpGET])]
+    function GetPhoto: TStream;
+
+    [MVCPath('/string')]
+    [MVCHTTPMethod([httpGET])]
+    function GetString: String;
+
+    [MVCPath('/enum')]
+    [MVCHTTPMethod([httpGET])]
+    function GetEnum: TFontStyle;
+
+    [MVCPath('/bool')]
+    [MVCHTTPMethod([httpGET])]
+    function GetBool: Boolean;
+
+    [MVCPath('/float')]
+    [MVCHTTPMethod([httpGET])]
+    function GetFloat: Double;
+
+    [MVCPath('/strdict')]
+    [MVCHTTPMethod([httpGET])]
+    function GetStrDict: TMVCStringDictionary;
+
+    [MVCPath('/TSimpleRecord')]
+    [MVCHTTPMethod([httpGET])]
+    function GetTSimpleRecord: TSimpleRecord;
+
+    [MVCPath('/ArrayOf/TSimpleRecord')]
+    [MVCHTTPMethod([httpGET])]
+    function GetArrayOfTSimpleRecord: TArray<TSimpleRecord>;
+
+    [MVCPath('/TComplexRecord')]
+    [MVCHTTPMethod([httpGET])]
+    function GetTComplexRecord: TComplexRecord;
+
+    [MVCPath('/ArrayOf/TComplexRecord')]
+    [MVCHTTPMethod([httpGET])]
+    function GetArrayOfTComplexRecord: TComplexRecordArray;
+
+    [MVCPath('/dataset/single')]
+    [MVCHTTPMethod([httpGET])]
+    function GetDataSetSingle: TDataSet;
+
+    [MVCPath('/dataset/multiple')]
+    [MVCHTTPMethod([httpGET])]
+    function GetDataSetMultiple: IMVCObjectDictionary;
+
+    { using IMVCResponse }
+    [MVCPath('/mvcresponse/message')]
+    function GetMVCResponseSimple: IMVCResponse;
+    [MVCPath('/mvcresponse/data')]
+    function GetMVCResponseWithData: IMVCResponse;
+    [MVCPath('/mvcresponse/data/message')]
+    function GetMVCResponseWithDataAndMessage: IMVCResponse;
+    [MVCPath('/mvcresponse/json')]
+    function GetMVCResponseWithJSON: IMVCResponse;
+    [MVCPath('/mvcresponse/list')]
+    function GetMVCResponseWithObjectList: IMVCResponse;
+    [MVCPath('/mvcresponse/dictionary')]
+    function GetMVCResponseWithObjectDictionary: IMVCResponse;
+    [MVCPath('/mvcresponse/error')]
+    function GetMVCErrorResponse: IMVCResponse;
+    [MVCPath('/mvcresponse/message/builder/headers')]
+    function GetMVCResponseSimpleBuilderWithHeaders: IMVCResponse;
+
+  end;
+
+
+
 implementation
 
 uses
@@ -414,11 +565,9 @@ uses
   System.JSON,
   Web.HTTPApp,
   Generics.Collections,
-  MVCFramework.Serializer.Commons,
   MVCFramework.Serializer.Defaults,
   MVCFramework.DuckTyping,
-  System.IOUtils,
-  System.Classes, MVCFramework.Tests.Serializer.Entities;
+  System.IOUtils, MVCFramework.Tests.Serializer.Entities, System.DateUtils;
 
 { TTestServerController }
 
@@ -507,7 +656,7 @@ begin
 
 end;
 
-function TTestServerController.GetDataSet: TDataSet;
+class function TTestServerController.GetDataSet: TDataSet;
 begin
   Result := TFDMemTable.Create(nil);
   TFDMemTable(Result).LoadFromFile(TPath.Combine(AppPath, 'customers.json'));
@@ -666,7 +815,7 @@ procedure TTestServerController.SessionGet;
 var
   s: string;
 begin
-  ContentType := Context.Request.Accept;
+  ContentType := TMVCMediaType.TEXT_PLAIN;
   s := Session['value'];
   Render(s);
 end;
@@ -717,16 +866,31 @@ begin
   lCustomer := TCustomer.Create;
   try
     Context.Request.BodyFor<TCustomer>(lCustomer);
-    // lCustomer.Logo.SaveToFile('pippo_server_before.bmp');
     lCustomer.Name := lCustomer.Name + ' changed';
-  {$IFNDEF LINUX}
-    //lCustomer.Logo.Canvas.TextOut(10, 10, 'Changed');
-  {$ENDIF}
     Render(lCustomer, False);
   finally
     lCustomer.Free;
   end;
 end;
+
+  procedure TTestServerController.TestCustomerEchoWithRootNode;
+  var
+    lCustomer1, lCustomer2: TCustomer;
+  begin
+    lCustomer1 := Context.Request.BodyAs<TCustomer>('customer1');
+    try
+      lCustomer2 := Context.Request.BodyAs<TCustomer>('customer2');
+      try
+        Render(ObjectDict(False)
+          .Add('customer1', lCustomer1)
+          .Add('customer2', lCustomer2));
+      finally
+        lCustomer2.Free;
+      end;
+    finally
+      lCustomer1.Free;
+    end;
+  end;
 
 procedure TTestServerController.TestDeserializeAndSerializeNullables;
 var
@@ -764,6 +928,8 @@ begin
   try
     lObj.Names := lObj.Names + ['added'];
     lObj.Values := lObj.Values + [99];
+    lObj.Values8 := lObj.Values8 + [99];
+    lObj.Values64 := lObj.Values64 + [99];
     lObj.Booleans := lObj.Booleans + [true];
     Render(lObj, False);
   finally
@@ -894,6 +1060,11 @@ begin
   Render('hello world');
 end;
 
+function TTestServerController.TestInvalidConverter(id: Int64): Int64;
+begin
+  Result := id; //never called
+end;
+
 procedure TTestServerController.TestIssue406;
 begin
   Render(HTTP_STATUS.UnprocessableEntity, TMVCErrorResponseItem.Create('The Message'));
@@ -976,6 +1147,18 @@ var
 begin
   Person := Context.Request.BodyAs<TPerson>();
   Render(Person);
+end;
+
+function TTestServerController.TestReceiveIntegerAndReturnSqid(
+  id: Int64): String;
+begin
+  Result := TMVCSqids.IntToSqid(id);
+end;
+
+function TTestServerController.TestReceiveSqidAsInteger(
+  id: Int64): Int64;
+begin
+  Result := id;
 end;
 
 procedure TTestServerController.TestRenderStreamAndFreeWithOwnerFalse;
@@ -1130,7 +1313,6 @@ var
   lPerson: TPerson;
 begin
   lPerson := Context.Request.BodyAs<TPerson>();
-  // lCustomer.Logo.SaveToFile('pippo_server_before.bmp');
   Render(lPerson, True);
 end;
 
@@ -1142,7 +1324,7 @@ begin
   try
     var lFName: string := TPath.Combine(AppPath, 'customers.json');
     lDS.LoadFromFile(lFName);
-    ViewDataset['customers'] := lDS;
+    ViewData['customers'] := lDS;
     ViewData['customers2'] := lDS;
     LoadView(['dataset_list']);
     RenderResponseStream;
@@ -1205,6 +1387,235 @@ end;
 procedure TTestMultiPathController.Action1or2;
 begin
   Render(HTTP_STATUS.OK);
+end;
+
+{ TTestActionResultController }
+
+function TTestActionResultController.GetArrayOfTComplexRecord: TComplexRecordArray;
+begin
+  SetLength(Result,3);
+  Result[0] := TComplexRecord.Create;
+  Result[1] := TComplexRecord.Create;
+  Result[2] := TComplexRecord.Create;
+
+  Result[0].StringProperty := 'item 0';
+  Result[1].StringProperty := 'item 1';
+  Result[2].StringProperty := 'item 2';
+end;
+
+function TTestActionResultController.GetArrayOfTSimpleRecord: TArray<TSimpleRecord>;
+begin
+  SetLength(Result, 3);
+  Result[0] := TSimpleRecord.Create;
+  Result[1] := TSimpleRecord.Create;
+  Result[2] := TSimpleRecord.Create;
+end;
+
+function TTestActionResultController.GetBool: Boolean;
+begin
+  Result := True;
+end;
+
+function TTestActionResultController.GetComplexObject: TComplexObject;
+begin
+  Result := TComplexObject.Create;
+  Result.Value := 1234;
+  Result.Person := TPerson.GetNew('Danielem', 'Teti', EncodeDate(1920,12,23), True);
+  Result.People := TPerson.GetList();
+end;
+
+function TTestActionResultController.GetDataSetMultiple: IMVCObjectDictionary;
+begin
+  Result :=
+    ObjectDict()
+      .Add('ds1', TTestServerController.GetDataSet)
+      .Add('ds2', TTestServerController.GetDataSet);
+end;
+
+function TTestActionResultController.GetDataSetSingle: TDataSet;
+begin
+  Result := TTestServerController.GetDataSet;
+end;
+
+function TTestActionResultController.GetEnum: TFontStyle;
+begin
+  Result := TFontStyle.fsBold;
+end;
+
+function TTestActionResultController.GetFloat: Double;
+begin
+  Result := 3.1415;
+end;
+
+function TTestActionResultController.GetMultipleRecords: TArray<TPersonRec>;
+begin
+  SetLength(Result, 3);
+  Result[0] := TPersonRec.Create;
+  Result[1] := TPersonRec.Create;
+  Result[2] := TPersonRec.Create;
+  Result[0].Age := 20;
+  Result[1].Age := 30;
+  Result[2].Age := 40;
+end;
+
+function TTestActionResultController.GetPeople: TObjectList<TPerson>;
+begin
+  Result := TPerson.GetList();
+end;
+
+function TTestActionResultController.GetPerson(id: Integer): IPerson;
+begin
+  Result := TInterfacedPerson.Create('Daniele Teti', 20, 2010);
+end;
+
+function TTestActionResultController.GetPhoto: TStream;
+begin
+  Context.Response.ContentType := TMVCMediaType.IMAGE_X_PNG;
+  Result := TFileStream.Create('sample.png', fmOpenRead or fmShareDenyNone);
+end;
+
+function TTestActionResultController.GetSingleRecord: TPersonRec;
+begin
+  Result := TPersonRec.Create;
+end;
+
+function TTestActionResultController.GetStrDict: TMVCStringDictionary;
+begin
+  Result := StrDict.Add('first_name','Daniele').Add('last_name','Teti');
+end;
+
+function TTestActionResultController.GetString: String;
+begin
+  Result := 'Hello World';
+end;
+
+function TTestActionResultController.GetTComplexRecord: TComplexRecord;
+begin
+  Result := TComplexRecord.Create;
+end;
+
+function TTestActionResultController.GetTSimpleRecord: TSimpleRecord;
+begin
+  Result := TSimpleRecord.Create;
+end;
+
+function TTestActionResultController.GetObject(a, b: Integer): TSum;
+begin
+  StatusCode := 201;
+  Context.Response.SetCustomHeader('X-CUSTOM-HEADER','CARBONARA');
+  Result := TSum.Create;
+  Result.Value := a + b;
+end;
+
+function TTestActionResultController.GetMVCErrorResponse: IMVCResponse;
+begin
+  raise EMVCException.Create(HTTP_STATUS.BadGateway, 1001, 'Error Message');
+end;
+
+function TTestActionResultController.GetMVCResponseSimple: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body('My Message')
+    .Build;
+end;
+
+function TTestActionResultController.GetMVCResponseSimpleBuilderWithHeaders: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.Created)
+    .Header('header1', 'Hello World')
+    .Header('header2', 'foo bar')
+    .Body('My Message')
+    .Build;
+end;
+
+function TTestActionResultController.GetMVCResponseWithData: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body(TPerson.GetNew('Daniele','Teti', EncodeDate(1979,11,4), True))
+    .Build;
+end;
+
+function TTestActionResultController.GetMVCResponseWithDataAndMessage: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body('This is a message')  //<< Message
+    .Body(TPerson.GetNew('Daniele','Teti', EncodeDate(1979,11,4), True)) //<< Data
+    .Body(ObjectDict().Add('person', TPerson.GetNew('Daniele','Teti', EncodeDate(1979,11,4), True)))
+    .Build;
+end;
+
+function TTestActionResultController.GetMVCResponseWithObjectDictionary: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body(ObjectDict()
+      .Add('people1', TObjectList<TPerson>.Create([
+                      TPerson.Create('Daniele','Teti', 99),
+                      TPerson.Create('Peter','Parker', 25),
+                      TPerson.Create('Bruce','Banner', 45)
+                    ])
+      )
+      .Add('people2', TObjectList<TPerson>.Create([
+                      TPerson.Create('Daniele','Teti', 99),
+                      TPerson.Create('Peter','Parker', 25),
+                      TPerson.Create('Bruce','Banner', 45)
+                    ])
+      )
+  )
+  .Build;
+end;
+
+function TTestActionResultController.GetMVCResponseWithObjectList: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body(TObjectList<TPerson>.Create([
+      TPerson.Create('Daniele','Teti', 99),
+      TPerson.Create('Peter','Parker', 25),
+      TPerson.Create('Bruce','Banner', 45)
+    ])
+  ).Build;
+end;
+
+function TTestActionResultController.GetMVCResponseWithJSON: IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(HTTP_STATUS.OK)
+    .Body(StrToJSONObject('{"name":"Daniele","surname":"Teti"}'))
+    .Build;
+end;
+
+
+{ TComplexObject }
+
+destructor TComplexObject.Destroy;
+begin
+  FPerson.Free;
+  FPeople.Free;
+  inherited;
+end;
+
+procedure TComplexObject.SetPeople(const Value: TPeople);
+begin
+  FPeople := Value;
+end;
+
+procedure TComplexObject.SetPerson(const Value: TPerson);
+begin
+  FPerson := Value;
+end;
+
+{ TPersonRec }
+
+class function TPersonRec.Create: TPersonRec;
+begin
+  Result.FirstName := 'Daniele';
+  Result.LastName := 'Teti';
+  Result.Age := 99;
 end;
 
 end.

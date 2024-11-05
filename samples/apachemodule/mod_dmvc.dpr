@@ -8,12 +8,15 @@ uses
   Web.ApacheApp,
   Web.HTTPD24Impl,
   MVCFramework.Logger,
+  MVCFramework.DotEnv,
+  MVCFramework.Commons,
+  Web.HTTPDMethods,
   Winapi.Windows,
   System.Classes,
-  MainWebModuleUnit in '..\winecellarserver\MainWebModuleUnit.pas' {wm: TWebModule} ,
-  MainDataModuleUnit in '..\winecellarserver\MainDataModuleUnit.pas' {WineCellarDataModule: TDataModule} ,
-  WineCellarAppControllerU in '..\winecellarserver\WineCellarAppControllerU.pas',
-  WinesBO in '..\winecellarserver\WinesBO.pas';
+  MainDataModuleUnit in '..\WineCellarSample\winecellarserver\MainDataModuleUnit.pas' {WineCellarDataModule: TDataModule},
+  MainWebModuleUnit in '..\WineCellarSample\winecellarserver\MainWebModuleUnit.pas' {wm: TWebModule},
+  WineCellarAppControllerU in '..\WineCellarSample\winecellarserver\WineCellarAppControllerU.pas',
+  WinesBO in '..\WineCellarSample\winecellarserver\WinesBO.pas';
 
 {$R *.res}
 // httpd.conf entries:
@@ -47,6 +50,17 @@ exports
 
 begin
   CoInitFlags := COINIT_MULTITHREADED;
+  dotEnvConfigure(
+    function : IMVCDotEnv
+    begin
+      Result := NewDotEnv
+                  .UseStrategy(TMVCDotEnvPriority.FileThenEnv)
+                  .UseLogger(procedure(LogItem: String)
+                             begin
+                               LogW('dotEnv: ' + LogItem);
+                             end)
+                  .Build();           //uses the executable folder to look for .env* files
+    end);
   Web.ApacheApp.InitApplication(@GModuleData);
   Application.Initialize;
   Application.WebModuleClass := WebModuleClass;

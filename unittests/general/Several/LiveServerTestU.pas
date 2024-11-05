@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -32,7 +32,7 @@ uses
   MVCFramework.RESTClient,
   MVCFramework.JSONRPC.Client,
   System.DateUtils,
-  System.Hash, System.Rtti;
+  System.Hash, System.Rtti, MVCFramework.Commons;
 
 type
 
@@ -89,6 +89,8 @@ type
     procedure TestPOSTWithObjectJSONBody;
     [Test]
     procedure TestCustomerEcho;
+    [Test]
+    procedure TestCustomerEchoWithRootNode;
     [Test]
     procedure TestEchoWithAllVerbs;
     [Test]
@@ -235,6 +237,23 @@ type
     [Category('renders,exceptions')]
     procedure TestEMVCException4;
 
+    [Test]
+    [Category('renders,exceptions')]
+    [TestCase('404'+'invalid_accept',               '404,/invalidurl,invalid_accept,' + TMVCMediaType.APPLICATION_JSON)]
+    [TestCase('404'+TMVCMediaType.TEXT_HTML,        '404,/invalidurl,' + TMVCMediaType.TEXT_HTML + ',' + TMVCMediaType.TEXT_HTML)]
+    [TestCase('404'+TMVCMediaType.TEXT_PLAIN,       '404,/invalidurl,' +  TMVCMediaType.TEXT_PLAIN + ',' + TMVCMediaType.TEXT_PLAIN)]
+    [TestCase('404'+TMVCMediaType.APPLICATION_JSON, '404,/invalidurl,' + TMVCMediaType.APPLICATION_JSON + ',' + TMVCMediaType.APPLICATION_JSON)]
+    [TestCase('500'+'invalid_accept',               '500,/exception/emvcexception1,invalid_accept,' + TMVCMediaType.APPLICATION_JSON)]
+    [TestCase('500'+TMVCMediaType.TEXT_HTML,        '500,/exception/emvcexception1,' + TMVCMediaType.TEXT_HTML + ',' + TMVCMediaType.TEXT_HTML)]
+    [TestCase('500'+TMVCMediaType.TEXT_PLAIN,       '500,/exception/emvcexception1,' +  TMVCMediaType.TEXT_PLAIN + ',' + TMVCMediaType.TEXT_PLAIN)]
+    [TestCase('500'+TMVCMediaType.APPLICATION_JSON, '500,/exception/emvcexception1,' + TMVCMediaType.APPLICATION_JSON + ',' + TMVCMediaType.APPLICATION_JSON)]
+
+    procedure TestResponseContentTypes(
+        const ExpectedStatus: Integer;
+        const URL: String;
+        const RequestAccept: String;
+        const ResponseContentType: String);
+
     // test nullables
     [Test]
     procedure TestDeserializeNullablesWithValue;
@@ -246,6 +265,19 @@ type
     procedure TestSerializeAndDeserializeNullables_ISSUE_362;
     [Test]
     procedure TestSerializeAndDeserializeNullables_Passing_Integers_InsteadOf_Floats;
+
+    //test sqids
+    [Test]
+    [TestCase('1', '1,Im1JUf')]
+    [TestCase('2','1234567890,LhXiwKz')]
+    [TestCase('3','9007199254740991,PTP7uQmcmk')]
+    procedure TestSqidSingle(IntValue: UInt64; Sqid: String);
+
+    [Test]
+    procedure TestWrongSqid;
+
+    [Test]
+    procedure TestInvalidConverter;
 
     // test responses objects
     [Test]
@@ -296,6 +328,39 @@ type
     [Test]
     procedure TestViewDataViewDataSet;
 
+    // test functional actions
+    [Test]
+    procedure TestFuncActionGetSingleRecord;
+
+    [Test]
+    procedure TestFuncActionGetMultipleRecords;
+
+    [Test]
+    procedure TestFuncActionGetDatasetSingle;
+
+    [Test]
+    procedure TestFuncActionGetDatasetMultiple;
+
+    [Test]
+    procedure TestFuncActionGetComplexObject;
+
+
+    // test functional actions with IMVCResponse and the MVCResponseBuilder
+    [Test]
+    procedure TestGetMVCResponseSimple;
+
+    [Test]
+    procedure TestGetMVCResponseWithJSON;
+
+    [Test]
+    procedure TestGetMVCResponseWithObjectList;
+
+    [Test]
+    procedure TestGetMVCResponseWithDataAndMessage;
+
+    [Test]
+    procedure TestGetMVCResponseSimpleBuilderWithHeaders;
+
     // test issues
     [Test]
     [Category('renders')]
@@ -343,6 +408,12 @@ type
     procedure TestRequestWithParams_I_I_ret_A;
     [Test]
     procedure TestRequestWithParams_DT_T_ret_DT;
+    // objects tests
+    [Test]
+    procedure TestRequestWithObjectParameters;
+    // exception tests
+    [Test]
+    procedure TestRequestWithException;
     // hooks tests
     [Test]
     procedure TestHooks;
@@ -386,6 +457,10 @@ type
     [Test]
     procedure TestInvalidSet;
 
+    //test issues
+    [Test]
+    procedure TestGetTCustomer_ISSUE648;
+
   end;
 
   [TestFixture]
@@ -404,7 +479,6 @@ uses
   MVCFramework.Serializer.Defaults,
   JsonDataObjects,
   MVCFramework.Serializer.JsonDataObjects,
-  MVCFramework.Commons,
   System.SyncObjs,
   System.Generics.Collections,
   System.SysUtils,
@@ -422,11 +496,12 @@ uses
   Vcl.Graphics
 {$ENDIF}
     , TestConstsU, MVCFramework.Tests.Serializer.Entities,
-  MVCFramework.Logger, System.IOUtils, MVCFramework.Utils;
+  MVCFramework.Logger, System.IOUtils, MVCFramework.Utils,
+  System.Net.HttpClient, System.Net.URLClient;
 
 function GetServer: string;
 begin
-  Result := 'http://' + TEST_SERVER_ADDRESS + ':9999';
+  Result := 'http://' + TEST_SERVER_ADDRESS + ':8888';
 end;
 
 { TServerTest }
@@ -442,8 +517,11 @@ end;
 procedure TBaseServerTest.Setup;
 begin
   inherited;
-  RESTClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 9999);
-  RESTClient.ReadTimeout(60 * 1000 * 30);
+  RESTClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  RESTClient
+    .ReadTimeout(60 * 1000 * 30)
+    .ProxyServer('localhost')
+    .ProxyPort(8080);
 end;
 
 procedure TBaseServerTest.TearDown;
@@ -674,7 +752,7 @@ procedure TServerTest.TestControllerWithExceptionInCreate(const URLSegment: stri
 var
   res: IMVCRESTResponse;
 begin
-  res := RESTClient.Get(URLSegment);
+  res := RESTClient.Accept(TMVCMediaType.APPLICATION_JSON).Get(URLSegment);
   Assert.areEqual(HTTP_STATUS.InternalServerError, res.StatusCode);
   // Assert.Contains(res.ContentType, 'text/plain', true, 'Is not a text/plain in case of error');
   Assert.Contains(res.ContentType, 'application/json', true,
@@ -691,7 +769,7 @@ var
 begin
   res := RESTClient.Get('/lotofcookies');
   Assert.areEqual<Integer>(HTTP_STATUS.OK, res.StatusCode);
-  Assert.areEqual(4, res.Cookies.Count, 'Wrong number of cookies');
+  Assert.areEqual<Integer>(4, res.Cookies.Count, 'Wrong number of cookies');
   for I := 0 to 3 do
   begin
     Assert.areEqual('usersettings' + IntToStr(I + 1), res.Cookies[I].Name);
@@ -905,6 +983,84 @@ begin
   end;
 end;
 
+procedure TServerTest.TestCustomerEchoWithRootNode;
+var
+  r: IMVCRESTResponse;
+  lCustomer1, lCustomer2: TCustomer;
+  lCustomers: TObjectList<TCustomer>;
+  lJSON: TJSONObject;
+  lSer: IMVCSerializer;
+begin
+  lSer := GetDefaultSerializer;
+  RegisterOptionalCustomTypesSerializers(lSer);
+  lCustomers := TCustomer.GetList(2);
+  try
+    lJSON := TJsonObject.Create;
+    try
+    (lSer as TMVCJsonDataObjectsSerializer)
+      .ObjectToJsonObject(lCustomers[0], lJSON.O['customer1'], TMVCSerializationType.stDefault, []);
+    (lSer as TMVCJsonDataObjectsSerializer)
+      .ObjectToJsonObject(lCustomers[1], lJSON.O['customer2'], TMVCSerializationType.stDefault, []);
+    r := RESTClient
+      .Accept(TMVCMediaType.APPLICATION_JSON)
+      .Post('/customerecho2', lJSON.ToJSON);
+    finally
+      lJSON.Free;
+    end;
+
+
+    lJSON := StrToJSONObject(r.Content);
+    try
+      lCustomer1 := TCustomer.Create;
+      try
+        (lSer as TMVCJsonDataObjectsSerializer)
+          .JsonObjectToObject(
+            lJSON.O['customer1'],
+            lCustomer1,
+            TMVCSerializationType.stDefault,
+            []
+            );
+
+          Assert.AreEqual(lCustomers[0].name, lCustomer1.name);
+          Assert.AreEqual('', lCustomer1.ContactFirst);
+          Assert.AreEqual('', lCustomer1.ContactLast);
+          Assert.AreEqual(lCustomers[0].AddressLine1, lCustomer1.AddressLine1);
+          Assert.AreEqual(lCustomers[0].AddressLine2, lCustomer1.AddressLine2);
+          Assert.AreEqual(lCustomers[0].Logo.Width, lCustomer1.Logo.Width);
+          Assert.AreEqual(lCustomers[0].Logo.Height, lCustomer1.Logo.Height);
+
+        lCustomer2 := TCustomer.Create;
+        try
+          (lSer as TMVCJsonDataObjectsSerializer)
+            .JsonObjectToObject(
+              lJSON.O['customer2'],
+              lCustomer2,
+              TMVCSerializationType.stDefault,
+              []
+              );
+
+          Assert.AreEqual(lCustomers[1].name, lCustomer2.name);
+          Assert.AreEqual('', lCustomer2.ContactFirst);
+          Assert.AreEqual('', lCustomer2.ContactLast);
+          Assert.AreEqual(lCustomers[1].AddressLine1, lCustomer2.AddressLine1);
+          Assert.AreEqual(lCustomers[1].AddressLine2, lCustomer2.AddressLine2);
+          Assert.AreEqual(lCustomers[1].Logo.Width, lCustomer2.Logo.Width);
+          Assert.AreEqual(lCustomers[1].Logo.Height, lCustomer2.Logo.Height);
+
+        finally
+          lCustomer2.Free;
+        end;
+      finally
+        lCustomer1.Free;
+      end;
+    finally
+      lJSON.Free;
+    end;
+  finally
+    lCustomers.Free;
+  end;
+end;
+
 procedure TServerTest.TestCustomAuthLoginLogout;
 var
   lRes: IMVCRESTResponse;
@@ -978,12 +1134,11 @@ var
 begin
   res := RESTClient.Get('/exception/emvcexception1');
   Assert.areEqual<Integer>(HTTP_STATUS.InternalServerError, res.StatusCode);
+  Assert.areEqual('Internal Server Error', res.StatusText);
   lJSON := StrToJSONObject(res.Content);
   try
     Assert.areEqual<string>('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual<string>('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
-    Assert.areEqual<Integer>(500, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual<string>('Internal Server Error', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
   finally
@@ -999,12 +1154,11 @@ var
 begin
   res := RESTClient.Get('/exception/emvcexception2');
   Assert.areEqual<Integer>(HTTP_STATUS.BadRequest, res.StatusCode);
+  Assert.areEqual('Bad Request', res.StatusText);
   lJSON := StrToJSONObject(res.Content);
   try
     Assert.areEqual<string>('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual<string>('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
-    Assert.areEqual<Integer>(HTTP_STATUS.BadRequest, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual<string>('Bad Request', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
   finally
@@ -1019,12 +1173,11 @@ var
 begin
   res := RESTClient.Get('/exception/emvcexception3');
   Assert.areEqual<Integer>(HTTP_STATUS.Created, res.StatusCode);
+  Assert.areEqual('Created', res.StatusText);
   lJSON := StrToJSONObject(res.Content);
   try
     Assert.areEqual('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
-    Assert.areEqual(HTTP_STATUS.Created, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual('Created', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(999, lJSON.I['apperrorcode'], lJSON.ToJSON());
     Assert.areEqual(0, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.isTrue(lJSON.IsNull('data'), lJSON.ToJSON());
@@ -1040,13 +1193,12 @@ var
 begin
   res := RESTClient.Get('/exception/emvcexception4');
   Assert.areEqual<Integer>(HTTP_STATUS.Created, res.StatusCode);
+  Assert.areEqual('Created', res.StatusText);
   lJSON := StrToJSONObject(res.Content);
   try
     Assert.areEqual('message', lJSON.S['message'], lJSON.ToJSON());
     Assert.areEqual('detailedmessage', lJSON.S['detailedmessage'], lJSON.ToJSON());
     Assert.areEqual('EMVCException', lJSON.S['classname'], lJSON.ToJSON());
-    Assert.areEqual(HTTP_STATUS.Created, lJSON.I['statuscode'], lJSON.ToJSON());
-    Assert.areEqual('Created', lJSON.S['reasonstring'], lJSON.ToJSON());
     Assert.areEqual(999, lJSON.I['apperrorcode'], lJSON.ToJSON());
     Assert.areEqual(2, lJSON.A['items'].Count, lJSON.ToJSON());
     Assert.areEqual('erritem1', lJSON.A['items'].O[0].S['message'], lJSON.ToJSON());
@@ -1097,6 +1249,8 @@ begin
   try
     lObj1.Names := ['one', 'two', 'three'];
     lObj1.Values := [1, 2, 3];
+    lObj1.Values8 := [4, 5, 6];
+    lObj1.Values64 := [7, 8, 9];
     lObj1.Booleans := [true, false];
     lBody := GetDefaultSerializer.SerializeObject(lObj1);
 
@@ -1105,19 +1259,19 @@ begin
     try
       GetDefaultSerializer.DeserializeObject(lRes.Content, lObj2);
 
-      Assert.areEqual(4, Length(lObj2.Names));
+      Assert.AreEqual<Integer>(4, Length(lObj2.Names));
       Assert.areEqual(lObj1.Names[0], lObj2.Names[0]);
       Assert.areEqual(lObj1.Names[1], lObj2.Names[1]);
       Assert.areEqual(lObj1.Names[2], lObj2.Names[2]);
       Assert.areEqual('added', lObj2.Names[3]);
 
-      Assert.areEqual(4, Length(lObj2.Values));
+      Assert.AreEqual<Integer>(4, Length(lObj2.Values));
       Assert.areEqual(lObj1.Values[0], lObj2.Values[0]);
       Assert.areEqual(lObj1.Values[1], lObj2.Values[1]);
       Assert.areEqual(lObj1.Values[2], lObj2.Values[2]);
       Assert.areEqual(99, lObj2.Values[3]);
 
-      Assert.areEqual(3, Length(lObj2.Booleans));
+      Assert.AreEqual<Integer>(3, Length(lObj2.Booleans));
       Assert.areEqual(lObj1.Booleans[0], lObj2.Booleans[0]);
       Assert.areEqual(lObj1.Booleans[1], lObj2.Booleans[1]);
       Assert.areEqual(true, lObj2.Booleans[2]);
@@ -1144,13 +1298,13 @@ begin
     try
       GetDefaultSerializer.DeserializeObject(lRes.Content, lObj2);
 
-      Assert.areEqual(1, Length(lObj2.Names));
+      Assert.AreEqual<Integer>(1, Length(lObj2.Names));
       Assert.areEqual('added', lObj2.Names[0]);
 
-      Assert.areEqual(1, Length(lObj2.Values));
+      Assert.AreEqual<Integer>(1, Length(lObj2.Values));
       Assert.areEqual(99, lObj2.Values[0]);
 
-      Assert.areEqual(1, Length(lObj2.Booleans));
+      Assert.AreEqual<Integer>(1, Length(lObj2.Booleans));
       Assert.areEqual(true, lObj2.Booleans[0]);
     finally
       lObj2.Free;
@@ -1353,12 +1507,124 @@ begin
   Assert.areEqual('This is a TEXT file', lRes.Content, '/static/folder1.html');
 end;
 
+procedure TServerTest.TestFuncActionGetComplexObject;
+var
+  c1: IMVCRESTClient;
+  lRes: IMVCRESTResponse;
+begin
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  lRes := c1.Get('/api/v1/actionresult/complex');
+  Assert.areEqual(200, lRes.StatusCode);
+  var lJSON := lRes.ToJSONObject;
+  try
+    Assert.AreEqual(3, lJSON.Count);
+    Assert.IsTrue(lJSON.Types['value'] = jdtInt);
+    Assert.IsTrue(lJSON.Types['person'] = jdtObject);
+    Assert.IsTrue(lJSON.Types['people'] = jdtArray);
+    Assert.AreEqual(6, lJSON.O['person'].Count);
+    Assert.AreEqual(3, lJSON.A['people'].Count);
+    Assert.AreEqual(6, lJSON.A['people'][0].ObjectValue.Count);
+    Assert.AreEqual(6, lJSON.A['people'][1].ObjectValue.Count);
+    Assert.AreEqual(6, lJSON.A['people'][2].ObjectValue.Count);
+  finally
+    lJSON.Free;
+  end;
+end;
+
+procedure TServerTest.TestFuncActionGetDatasetMultiple;
+var
+  c1: IMVCRESTClient;
+  lRes: IMVCRESTResponse;
+begin
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  lRes := c1.Get('/api/v1/actionresult/dataset/multiple');
+  Assert.areEqual(200, lRes.StatusCode);
+  var lJSON := lRes.ToJSONObject;
+  try
+    Assert.AreEqual(2, lJSON.Count);
+    Assert.IsTrue(lJSON.Contains('ds1'));
+    Assert.IsTrue(lJSON.Contains('ds2'));
+    Assert.AreEqual(15, lJSON.A['ds1'].Count);
+    Assert.AreEqual(15, lJSON.A['ds2'].Count);
+  finally
+    lJSON.Free;
+  end;
+end;
+
+procedure TServerTest.TestFuncActionGetDatasetSingle;
+var
+  c1: IMVCRESTClient;
+  lRes: IMVCRESTResponse;
+begin
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  lRes := c1.Get('/api/v1/actionresult/dataset/single');
+  Assert.areEqual(200, lRes.StatusCode);
+  var lJSON := lRes.ToJSONArray;
+  try
+    Assert.AreEqual(15, lJSON.Count);
+    for var I := 0 to lJSON.Count - 1 do
+    begin
+      Assert.IsTrue(lJSON[I].Typ = jdtObject);
+      Assert.AreEqual(12, lJSON[I].ObjectValue.Count);
+    end;
+  finally
+    lJSON.Free;
+  end;
+end;
+
+procedure TServerTest.TestFuncActionGetMultipleRecords;
+var
+  c1: IMVCRESTClient;
+  lRes: IMVCRESTResponse;
+begin
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  lRes := c1.Get('/api/v1/actionresult/records/multiple');
+  Assert.areEqual(200, lRes.StatusCode);
+  var lJSON := lRes.ToJSONArray;
+  try
+    Assert.AreEqual(3, lJSON.Count);
+
+    Assert.AreEqual('Daniele', lJSON[0].S['firstName']);
+    Assert.AreEqual('Teti', lJSON[0].S['lastName']);
+    Assert.AreEqual(20, lJSON[0].I['age']);
+
+    Assert.AreEqual('Daniele', lJSON[1].S['firstName']);
+    Assert.AreEqual('Teti', lJSON[1].S['lastName']);
+    Assert.AreEqual(30, lJSON[1].I['age']);
+
+    Assert.AreEqual('Daniele', lJSON[2].S['firstName']);
+    Assert.AreEqual('Teti', lJSON[2].S['lastName']);
+    Assert.AreEqual(40, lJSON[2].I['age']);
+  finally
+    lJSON.Free;
+  end;
+end;
+
+procedure TServerTest.TestFuncActionGetSingleRecord;
+var
+  c1: IMVCRESTClient;
+  lRes: IMVCRESTResponse;
+begin
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  lRes := c1.Get('/api/v1/actionresult/records/single');
+  Assert.areEqual(200, lRes.StatusCode);
+  var lJSON := lRes.ToJSONObject;
+  try
+    Assert.AreEqual(3, lJSON.Count);
+    Assert.AreEqual('Daniele', lJSON.S['firstName']);
+    Assert.AreEqual('Teti', lJSON.S['lastName']);
+    Assert.AreEqual(99, lJSON.I['age']);
+  finally
+    lJSON.Free;
+  end;
+end;
+
 procedure TServerTest.TestGetImagePng;
 var
   c1: IMVCRESTClient;
   lRes: IMVCRESTResponse;
 begin
-  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 9999);
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
   // c1.Accept(TMVCMediaType.IMAGE_PNG);
   lRes := c1.Get('/image/png');
   Assert.areEqual(200, lRes.StatusCode);
@@ -1383,7 +1649,7 @@ begin
   lResp := RESTClient.Get('/injectable10');
   lJSON := StrToJSONObject(lResp.Content);
   try
-    Assert.areEqual('this is a string', lJSON.S['ParString'], 'wrong string');
+    Assert.areEqual('this is a string', lJSON.S['ParString'], 'wrong string: ' + lJSON.ToJSON());
     Assert.areEqual(1234, lJSON.I['ParInteger'], 'wrong ParInteger');
     Assert.areEqual<Int64>(1234567890, lJSON.L['ParInt64'], 'wrong ParInt64');
     Assert.areEqual('2011-11-17', lJSON.S['ParTDate'], 'wrong ParTDate');
@@ -1426,12 +1692,93 @@ begin
   end;
 end;
 
+procedure TServerTest.TestGetMVCResponseSimple;
+var
+  r: IMVCRESTResponse;
+begin
+  r := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Get('/api/v1/actionresult/mvcresponse/message');
+  Assert.areEqual(HTTP_STATUS.OK, r.StatusCode);
+  Assert.areEqual('{"message":"My Message"}', r.Content, r.Content);
+end;
+
+procedure TServerTest.TestGetMVCResponseSimpleBuilderWithHeaders;
+var
+  r: IMVCRESTResponse;
+begin
+  r := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Get('/api/v1/actionresult/mvcresponse/message/builder/headers');
+  Assert.areEqual(HTTP_STATUS.Created, r.StatusCode);
+  Assert.AreEqual('Hello World', r.HeaderValue('header1'));
+  Assert.AreEqual('foo bar', r.HeaderValue('header2'));
+  var lJ := r.ToJSONObject;
+  try
+    Assert.IsTrue(lJ.Contains('message'));
+  finally
+    lJ.Free;
+  end;
+end;
+
+procedure TServerTest.TestGetMVCResponseWithDataAndMessage;
+var
+  r: IMVCRESTResponse;
+begin
+  r := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Get('/api/v1/actionresult/mvcresponse/data/message');
+  Assert.areEqual(HTTP_STATUS.OK, r.StatusCode);
+  var lJ := r.ToJSONObject;
+  try
+    Assert.IsTrue(lJ.Contains('data'));
+    Assert.IsTrue(lJ.Contains('message'));
+    Assert.IsTrue(lJ.Contains('person'));
+  finally
+    lJ.Free;
+  end;
+end;
+
+procedure TServerTest.TestGetMVCResponseWithJSON;
+var
+  r: IMVCRESTResponse;
+begin
+  r := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Get('/api/v1/actionresult/mvcresponse/json');
+  Assert.areEqual(HTTP_STATUS.OK, r.StatusCode);
+  Assert.areEqual('{"data":{"name":"Daniele","surname":"Teti"}}', r.Content, r.Content);
+end;
+
+procedure TServerTest.TestGetMVCResponseWithObjectList;
+var
+  r: IMVCRESTResponse;
+begin
+  r := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Get('/api/v1/actionresult/mvcresponse/list');
+  Assert.areEqual(HTTP_STATUS.OK, r.StatusCode);
+  var lJ := r.ToJSONObject;
+  try
+    Assert.IsTrue(lJ.Contains('data'));
+    Assert.IsTrue(lJ.Types['data'] = jdtArray);
+    Assert.AreEqual(3, lJ.A['data'].Count)
+  finally
+    lJ.Free;
+  end;
+end;
+
 procedure TServerTest.TestInvalidateSession;
 var
   c1: IMVCRESTClient;
   res: IMVCRESTResponse;
 begin
-  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 9999);
+  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
   c1.Accept(TMVCMediaType.APPLICATION_JSON);
   c1.AddPathParam('param1', 'daniele teti').Post('/session/($param1)');
   // imposto un valore in sessione
@@ -1440,6 +1787,14 @@ begin
   c1.SessionId('');
   res := c1.Get('/session'); // rileggo il valore dalla sessione
   Assert.areEqual('', res.Content);
+end;
+
+procedure TServerTest.TestInvalidConverter;
+var
+  lRes: IMVCRESTResponse;
+begin
+  lRes := RESTClient.Get('/wrongconverter/1');
+  Assert.areEqual(500, lRes.StatusCode);
 end;
 
 procedure TServerTest.TestIssue406;
@@ -1560,6 +1915,22 @@ var
 begin
   lRes := RESTClient.Get(URLSegment);
   Assert.areEqual(HTTP_STATUS.OK, lRes.StatusCode);
+end;
+
+procedure TServerTest.TestResponseContentTypes(
+  const ExpectedStatus: Integer;
+  const URL: String;
+  const RequestAccept: String;
+  const ResponseContentType: String);
+var
+  res: IMVCRESTResponse;
+begin
+  res := RESTClient
+    .ClearHeaders
+    .Accept(RequestAccept)
+    .Get(URL);
+  Assert.AreEqual<Integer>(ExpectedStatus, res.StatusCode);
+  Assert.StartsWith(ResponseContentType, res.ContentType);
 end;
 
 procedure TServerTest.TestObjectDict;
@@ -1979,9 +2350,25 @@ var
   res: IMVCRESTResponse;
   lContentType: string;
   lContentCharset: string;
+  lVal: String;
+  lISO8859_1Encoding: TEncoding;
 begin
-  res := RESTClient.Accept(TMVCMediaType.TEXT_PLAIN).Post('/testconsumes/textiso8859_1', 'אטילעש',
-    BuildContentType(TMVCMediaType.TEXT_PLAIN, TMVCCharSet.ISO88591));
+  lISO8859_1Encoding := TEncoding.GetEncoding('iso8859-1');
+  try
+    lVal :=
+      lISO8859_1Encoding
+        .GetString(
+          TEncoding.Convert(
+            TEncoding.Default,
+            lISO8859_1Encoding,
+            lISO8859_1Encoding.GetBytes('אטילעש')
+            )
+          );
+  finally
+    lISO8859_1Encoding.Free;
+  end;
+  res := RESTClient.Accept(TMVCMediaType.TEXT_PLAIN)
+    .Post('/testconsumes/textiso8859_1', lVal, BuildContentType(TMVCMediaType.TEXT_PLAIN, TMVCCharSet.ISO88591));
   Assert.areEqual<Integer>(HTTP_STATUS.OK, res.StatusCode);
   // Assert.AreNotEqual('אטילעש', res.Content, 'non iso8859-1 text is rendered ok whan should not');
   SplitContentMediaTypeAndCharset(res.ContentType, lContentType, lContentCharset);
@@ -2403,13 +2790,21 @@ var
   c1: IMVCRESTClient;
   res: IMVCRESTResponse;
   S: string;
+  lCookie: TCookie;
 begin
-  c1 := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 9999);
-  c1.Accept(TMVCMediaType.APPLICATION_JSON);
+  c1 := TMVCRESTClient
+    .New
+    .BaseURL(TEST_SERVER_ADDRESS, 8888)
+    .Accept(TMVCMediaType.APPLICATION_JSON);
   res := c1.Post('/session/daniele teti'); // imposto un valore in sessione
-  S := res.HeaderValue('Set-Cookie');
-  Assert.IsFalse(S.Contains('Expires'), 'Session cookie contains "expires" attribute');
-  res := c1.Get('/session'); // rileggo il valore dalla sessione
+  Assert.IsTrue(res.Cookies.Count > 0);
+  lCookie := res.CookieByName('dtsessionid', True);
+  Assert.AreEqual('dtsessionid', lCookie.Name);
+//  Assert.IsFalse(S.Contains('Expires'), 'Session cookie contains "expires" attribute');
+  res := c1
+    .AddCookie('dtsessionid', lCookie.Value)
+    .Get('/session'); // rileggo il valore dalla sessione
+  S := res.Content;
   Assert.areEqual('daniele teti', res.Content);
   c1.Accept(TMVCMediaType.TEXT_PLAIN);
   res := c1.Get('/session');
@@ -2455,9 +2850,22 @@ begin
     lUrl := '..\' + lUrl;
     lRes := RESTClient.Accept(TMVCMediaType.TEXT_HTML).Get('/spa/' + lUrl);
     Assert.areEqual(404, lRes.StatusCode);
-    Assert.Contains(lRes.Content, '[EMVCException] Not Found', true);
-    Assert.Contains(lRes.Content, '<p>HTTP 404</p>', true);
+    Assert.Contains(lRes.Content, '404', true);
+    Assert.Contains(lRes.Content, 'Not Found', true);
   end;
+end;
+
+procedure TServerTest.TestSqidSingle(IntValue: UInt64; Sqid: String);
+var
+  lRes: IMVCRESTResponse;
+begin
+  lRes := RESTClient.Get('/sqids/itos/' + IntValue.ToString);
+  Assert.areEqual(200, lRes.StatusCode);
+  Assert.AreEqual(TMVCSqids.IntToSqid(IntValue), lRes.Content.Trim, '(local)');
+  Assert.AreEqual(Sqid, lRes.Content.Trim, '(remote)');
+  lRes := RESTClient.Get('/sqids/stoi/' + Sqid);
+  Assert.areEqual(200, lRes.StatusCode);
+  Assert.AreEqual<Int64>(IntValue, lRes.Content.Trim.ToInt64);
 end;
 
 procedure TServerTest.TestStringDictionary;
@@ -2621,20 +3029,22 @@ var
 begin
   lRes := RESTClient.Accept(TMVCMediaType.TEXT_PLAIN).Get('/website/list');
   Assert.areEqual(HTTP_STATUS.OK, lRes.StatusCode, lRes.Content);
-  var
-  lLines := lRes.Content.Split([sLineBreak]);
-  var
-    lCount: Integer := 1001;
+  var lLines := lRes.Content.Split([sLineBreak]);
+  Assert.IsTrue(Length(lLines) > 5);
+  var lCount: Integer := 1001;
   for var lLine in lLines do
   begin
-    var
-    lLinePieces := lLine.Split(['|']);
+    if lLine.IsEmpty then
+    begin
+      Continue;
+    end;
+    var lLinePieces := lLine.Split(['|']);
     if Length(lLinePieces) = 1 then
     begin
       lCount := 1001;
       Continue;
     end;
-    Assert.areEqual(9, Length(lLinePieces));
+    Assert.AreEqual<Integer>(9, Length(lLinePieces));
     Assert.areEqual(lCount, lLinePieces[0].ToInteger);
     Inc(lCount);
   end;
@@ -2646,6 +3056,14 @@ var
 begin
   lRes := RESTClient.Post('/stringdictionary', '{"prop1","value1"}');
   Assert.areEqual(HTTP_STATUS.BadRequest, lRes.StatusCode);
+end;
+
+procedure TServerTest.TestWrongSqid;
+var
+  lRes: IMVCRESTResponse;
+begin
+  lRes := RESTClient.Get('/sqids/itos/123456789123456789123456789123456789');
+  Assert.areEqual(400, lRes.StatusCode);
 end;
 
 procedure TServerTest.TestTypedDateTimeTypes;
@@ -2730,11 +3148,11 @@ end;
 
 procedure TJSONRPCServerTest.InitExecutors;
 begin
-  FExecutor := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS + ':9999/jsonrpc', false);
+  FExecutor := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS + ':8888/jsonrpc', false);
   FExecutor2 := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS +
-    ':9999/jsonrpcclass', false);
+    ':8888/jsonrpcclass', false);
   FExecutor3 := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS +
-    ':9999/jsonrpcclass1', false);
+    ':8888/jsonrpcclass1', false);
 end;
 
 procedure TJSONRPCServerTest.Setup;
@@ -2766,6 +3184,15 @@ begin
     GetEnumValue(TypeInfo(TEnumTest), 'etValue2'),
     GetEnumValue(TypeInfo(TEnumTest), lResp.Result.AsString)
     );
+end;
+
+procedure TJSONRPCServerTest.TestGetTCustomer_ISSUE648;
+begin
+  var lRequest1: IJSONRPCRequest := TJSONRPCRequest.Create(1234, 'GetTCustomer_ISSUE648');
+  var lResp := FExecutor2.ExecuteRequest(lRequest1);
+  var lCustomer := TJSONUtils.JsonObjectToRecord<TCustomerIssue648>(lResp);
+  Assert.AreEqual(155, lCustomer.Id.Value);
+  Assert.AreEqual('Daniele Teti', lCustomer.Name.Value);
 end;
 
 procedure TJSONRPCServerTest.TestHooks;
@@ -2981,6 +3408,22 @@ begin
   Assert.Contains(lRPCResp.Error.ErrMessage, 'cannot find parameter', true);
 end;
 
+procedure TJSONRPCServerTest.TestRequestWithException;
+var
+  lReq: IJSONRPCRequest;
+  lResp: IJSONRPCResponse;
+  lPersSrc: TPerson;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'DoError';
+  lPersSrc := TPerson.GetNew('Daniele','Teti', EncodeDate(1979,12,1), True);
+  lReq.Params.AddByName('MyObj', lPersSrc);
+  lReq.RequestID := 1;
+  lResp := FExecutor2.ExecuteRequest(lReq);
+  Assert.IsTrue(lResp.IsError);
+  Assert.AreEqual('BOOOM!! (TTestJSONRPCClass.DoError)', lResp.Error.ErrMessage);
+end;
+
 procedure TJSONRPCServerTest.TestRequestWithNamedParams_I_I_I_ret_O;
 var
   lReq: IJSONRPCRequest;
@@ -3022,6 +3465,30 @@ begin
   Assert.areEqual(10, lResp.Result.AsInteger);
   Assert.areEqual(1234, lResp.RequestID.AsInteger);
 end;
+
+procedure TJSONRPCServerTest.TestRequestWithObjectParameters;
+var
+  lReq: IJSONRPCRequest;
+  lResp: IJSONRPCResponse;
+  lPersSrc, lPersDst: TPerson;
+begin
+  lReq := TJSONRPCRequest.Create;
+  lReq.Method := 'handlingobjects';
+  lPersSrc := TPerson.GetNew('Daniele','Teti', EncodeDate(1979,12,1), True);
+  lReq.Params.AddByName('MyObj', lPersSrc);
+  lReq.RequestID := 1;
+  lResp := FExecutor2.ExecuteRequest(lReq);
+  Assert.IsFalse(lResp.IsError);
+
+  lPersDst := TPerson.Create;
+  try
+    lResp.ResultAs(lPersDst);
+    Assert.AreEqual(lPersSrc.ToString, lPersDst.ToString);
+  finally
+    lPersDst.Free;
+  end;
+end;
+
 
 procedure TJSONRPCServerTest.TestRequestWithoutParams;
 var
@@ -3201,7 +3668,7 @@ begin
   lReq.RequestID := 1234;
   lRPCResp := FExecutor2.ExecuteRequest(lReq);
   lSimpleRecArray := TJSONUtils.JSONArrayToArrayOfRecord<TSimpleRecord>(lRPCResp);
-  Assert.AreEqual(3, Length(lSimpleRecArray));
+  Assert.AreEqual<Integer>(3, Length(lSimpleRecArray));
   Assert.AreEqual(0, lSimpleRecArray[0].IntegerProperty);
   Assert.AreEqual(1, lSimpleRecArray[1].IntegerProperty);
   Assert.AreEqual(2, lSimpleRecArray[2].IntegerProperty);
@@ -3242,7 +3709,7 @@ begin
   Assert.IsTrue(lRec.SimpleRecord.SetProperty - [EnumItem1, EnumItem3] = []);
 
   //Dynamic Array Records
-  Assert.AreEqual(2, Length(lRec.SimpleRecordDynArray), 'Wrong size for dynamic array');
+  Assert.AreEqual<Integer>(2, Length(lRec.SimpleRecordDynArray), 'Wrong size for dynamic array');
   Assert.AreEqual('1', lRec.SimpleRecordDynArray[0].StringProperty);
   Assert.AreEqual('2', lRec.SimpleRecordDynArray[1].StringProperty);
 
@@ -3306,12 +3773,12 @@ end;
 
 procedure TJSONRPCServerWithGETTest.InitExecutors;
 begin
-  FExecutor := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS + ':9999/jsonrpcwithget',
+  FExecutor := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS + ':8888/jsonrpcwithget',
     false, jrpcGet);
   FExecutor2 := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS +
-    ':9999/jsonrpcclasswithget', false, jrpcGet);
+    ':8888/jsonrpcclasswithget', false, jrpcGet);
   FExecutor3 := TMVCJSONRPCExecutor.Create('http://' + TEST_SERVER_ADDRESS +
-    ':9999/jsonrpcclass1withget', false, jrpcGet);
+    ':8888/jsonrpcclass1withget', false, jrpcGet);
 end;
 
 initialization

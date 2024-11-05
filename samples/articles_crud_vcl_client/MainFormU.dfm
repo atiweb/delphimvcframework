@@ -10,9 +10,7 @@ object MainForm: TMainForm
   Font.Height = -11
   Font.Name = 'Tahoma'
   Font.Style = []
-  OldCreateOrder = False
   OnCreate = FormCreate
-  PixelsPerInch = 96
   TextHeight = 13
   object Panel1: TPanel
     Left = 0
@@ -91,7 +89,7 @@ object MainForm: TMainForm
         Top = 19
         Width = 107
         Height = 40
-        Caption = 'Filter'
+        Caption = 'Filter by description'
         TabOrder = 0
         OnClick = btnFilterClick
       end
@@ -152,6 +150,7 @@ object MainForm: TMainForm
   object dsArticles: TFDMemTable
     AfterOpen = dsArticlesAfterOpen
     BeforePost = dsArticlesBeforePost
+    AfterPost = dsArticlesAfterPost
     BeforeDelete = dsArticlesBeforeDelete
     BeforeRefresh = dsArticlesBeforeRefresh
     FieldDefs = <>

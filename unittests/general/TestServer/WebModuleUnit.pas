@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -69,7 +69,7 @@ uses
   {$ENDIF}
   MVCFramework.Middleware.Compression,
   MVCFramework.Middleware.StaticFiles, FireDAC.Comp.Client,
-  MVCFramework.ActiveRecord, FDConnectionConfigU;
+  MVCFramework.ActiveRecord, FDConnectionConfigU, System.IOUtils;
 
 procedure TMainWebModule.WebModuleCreate(Sender: TObject);
 begin
@@ -79,7 +79,7 @@ begin
       // no config here
       Config[TMVCConfigKey.SessionTimeout] := '0'; // setting cookie
       Config[TMVCConfigKey.PathPrefix] := '';
-      Config[TMVCConfigKey.ViewPath] := '..\templates';
+      Config[TMVCConfigKey.ViewPath] := TPath.Combine(AppPath, '..\templates');
       Config[TMVCConfigKey.DefaultViewFileExtension] := 'html';
     end, nil);
   MVCEngine
@@ -90,13 +90,10 @@ begin
     .AddController(TTestServerControllerActionFilters)
     .AddController(TTestPrivateServerControllerCustomAuth)
     .AddController(TTestMultiPathController)
+    .AddController(TTestActionResultController)
     .AddController(TTestJSONRPCController, '/jsonrpc')
     .AddController(TTestJSONRPCControllerWithGet, '/jsonrpcwithget')
-    .AddController(TMVCActiveRecordController,
-        function: TMVCController
-        begin
-          Result := TMVCActiveRecordController.Create(CON_DEF_NAME);
-        end, '/api/entities')
+    .AddController(TMVCActiveRecordController, '/api/entities')
     .PublishObject(
     function: TObject
     begin
@@ -132,12 +129,11 @@ begin
     .AddMiddleware(TMVCCustomAuthenticationMiddleware.Create(TCustomAuthHandler.Create, '/system/users/logged'))
     .AddMiddleware(TMVCStaticFilesMiddleware.Create('/static', 'www', 'index.html', False))
     .AddMiddleware(TMVCStaticFilesMiddleware.Create('/spa', 'www', 'index.html', True))
-//    .AddMiddleware(TMVCStaticFilesMiddleware.Create('/', 'www', 'index.html', False))
     .AddMiddleware(TMVCBasicAuthenticationMiddleware.Create(TBasicAuthHandler.Create))
     .AddMiddleware(TMVCCompressionMiddleware.Create);
 {$IFDEF MSWINDOWS}
   MVCEngine.SetViewEngine(TMVCMustacheViewEngine);
-  RegisterOptionalCustomTypesSerializers(MVCEngine.Serializers[TMVCMediaType.APPLICATION_JSON]);
+  RegisterOptionalCustomTypesSerializers(MVCEngine.Serializer(TMVCMediaType.APPLICATION_JSON));
 {$ENDIF}
 end;
 

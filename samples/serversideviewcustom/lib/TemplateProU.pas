@@ -300,14 +300,20 @@ var
 begin
   fDataSources.Clear;
 
-  for lDatasetPair in aDatasetDictionary do
+  if Assigned(aDatasetDictionary) then
   begin
-    fDataSources.Add(lDatasetPair.Key, TTPDatasetAdapter.Create(lDatasetPair.Value));
+    for lDatasetPair in aDatasetDictionary do
+    begin
+      fDataSources.Add(lDatasetPair.Key, TTPDatasetAdapter.Create(lDatasetPair.Value));
+    end;
   end;
 
-  for lObjectPair in aObjectDictionary do
+  if Assigned(aObjectDictionary) then
   begin
-    fDataSources.Add(lObjectPair.Key, TTPObjectListAdapter.Create(lObjectPair.Value));
+    for lObjectPair in aObjectDictionary do
+    begin
+      fDataSources.Add(lObjectPair.Key, TTPObjectListAdapter.Create(lObjectPair.Value));
+    end;
   end;
 end;
 
@@ -902,7 +908,7 @@ constructor TTPObjectListAdapter.Create(const aObjectList: TObjectList<TObject>)
 begin
   inherited Create;
   fObjectList := aObjectList;
-  if fObjectList.Count > 0 then
+  if Assigned(fObjectList) and (fObjectList.Count > 0) then
     fIndex := 0
   else
     fIndex := -1;

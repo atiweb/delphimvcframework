@@ -118,6 +118,16 @@ type
     [MVCSwagResponses(500, 'Internal Server Error')]
     [MVCConsumes(TMVCMediaType.APPLICATION_JSON)]
     procedure InsertPerson;
+
+    [MVCPath('/multiple')]
+    [MVCHTTPMethod([httpPOST])]
+    [MVCSwagSummary('People', 'Insert Person', 'createPerson')]
+    [MVCSwagParam(plBody, 'entity', 'Person object', TPerson, ptArray)]
+    [MVCSwagResponses(201, 'Created')]
+    [MVCSwagResponses(401, 'Requires Authentication')]
+    [MVCSwagResponses(500, 'Internal Server Error')]
+    [MVCConsumes(TMVCMediaType.APPLICATION_JSON)]
+    procedure InsertMultiplePeople;
   end;
 
 implementation
@@ -154,6 +164,15 @@ begin
   Render(LPerson);
 end;
 
+procedure TMyController2.InsertMultiplePeople;
+var
+  LPerson: TObjectList<TPerson>;
+begin
+  LPerson := Context.Request.BodyAsListOf<TPerson>;
+  Render(LPerson);
+  ResponseStatus(201, 'Created');
+end;
+
 procedure TMyController2.InsertPerson;
 var
   LPerson: TPerson;
@@ -171,10 +190,12 @@ begin
   FAddress := TAddress.Create;
   FPhones := TPhones.Create;
   FStringDictionary := TMVCStringDictionary.Create;
+  FListField := TList<String>.Create;
 end;
 
 destructor TPerson.Destroy;
 begin
+  FListField.Free;
   FAddress.Free;
   FPhones.Free;
   FStringDictionary.Free;

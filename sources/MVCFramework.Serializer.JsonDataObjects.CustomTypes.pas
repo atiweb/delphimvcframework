@@ -2,11 +2,11 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2022 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
-// Collaborators with this file: Ezequiel Juliano Müller (ezequieljuliano@gmail.com)
+// Collaborators with this file: Ezequiel Juliano Mï¿½ller (ezequieljuliano@gmail.com)
 //
 // ***************************************************************************
 //
@@ -72,6 +72,11 @@ type
   end;
 
   TMVCObjectDictionarySerializer = class(TInterfacedObject, IMVCTypeSerializer)
+  private
+    procedure InternalSerializeIMVCObjectDictionary(
+  lObjDict: TMVCObjectDictionary;
+  var lOutObject: TJsonObject;
+  const ASerializationAction: TMVCSerializationAction);
   protected
     fCurrentSerializer: TMVCJsonDataObjectsSerializer;
   public
@@ -412,7 +417,7 @@ begin
       try
         if lDataSetHolder.SerializationType = TMVCDatasetSerializationType.dstAllRecords then
         begin
-          lSer.DataSetToJsonArray(lDataSetHolder.Items, lOutObject.A['data'], TMVCNameCase.ncLowerCase, [])
+          lSer.DataSetToJsonArray(lDataSetHolder.Items, lOutObject.A['data'], TMVCNameCase.ncUseDefault, [])
         end
         else // single record
         begin
@@ -421,9 +426,9 @@ begin
             raise EMVCException.CreateFmt('DataSet contains %d records - exactly 1 expected',
               [lDataSetHolder.Items.RecordCount]);
           end;
-          lDSFields := lSer.GetDataSetFields(lDataSetHolder.Items, [], TMVCNameCase.ncLowerCase);
+          lDSFields := lSer.GetDataSetFields(lDataSetHolder.Items, [], TMVCNameCase.ncUseDefault);
           try
-            lSer.DataSetToJsonObject(lDataSetHolder.Items, lOutObject.O['data'], TMVCNameCase.ncLowerCase, [],
+            lSer.DataSetToJsonObject(lDataSetHolder.Items, lOutObject.O['data'], TMVCNameCase.ncUseDefault, [],
               lDSFields);
           finally
             lDSFields.Free;
@@ -469,27 +474,28 @@ procedure TMVCObjectDictionarySerializer.SerializeAttribute(
   const AElementValue: TValue; const APropertyName: string;
   const ASerializerObject: TObject;
   const AAttributes: TArray<TCustomAttribute>);
-begin
-  raise EMVCDeserializationException.Create('Serialization as attribute not supported for this type');
-end;
-
-procedure TMVCObjectDictionarySerializer.SerializeRoot(const AObject: TObject;
-  out ASerializerObject: TObject; const AAttributes: TArray<TCustomAttribute>;
-  const ASerializationAction: TMVCSerializationAction);
 var
   lObjDict: TMVCObjectDictionary;
-  lOutObject, lOutCustom: TJsonObject;
+  lOutObject: TJsonObject;
+begin
+  lObjDict := TMVCObjectDictionary(AElementValue.AsInterface);
+  lOutObject := TJsonObject(ASerializerObject);
+  InternalSerializeIMVCObjectDictionary(lObjDict, lOutObject, nil);
+end;
+
+procedure TMVCObjectDictionarySerializer.InternalSerializeIMVCObjectDictionary(
+  lObjDict: TMVCObjectDictionary;
+  var lOutObject: TJsonObject;
+  const ASerializationAction: TMVCSerializationAction);
+var
+  lOutCustom: TJsonObject;
   lName: string;
   lObj: TMVCObjectDictionary.TMVCObjectDictionaryValueItem;
   lList: IMVCList;
   lLinks: IMVCLinks;
   lJSONType: TJsonDataType;
   lJSONValue: TJsonBaseObject;
-
 begin
-  lObjDict := TMVCObjectDictionary(AObject);
-  lOutObject := TJsonObject.Create;
-  try
     for lName in lObjDict.Keys do
     begin
       lObj := lObjDict.Items[lName];
@@ -585,10 +591,22 @@ begin
             RaiseSerializationError('Invalid JSON');
           end;
         end;
-        // fCurrentSerializer.InternalObjectToJsonObject(lObj.Data, lOutObject.O[lName],
-        // TMVCSerializationType.stDefault, [], lObj.SerializationAction, lLinks, nil);
       end;
     end
+
+end;
+
+procedure TMVCObjectDictionarySerializer.SerializeRoot(const AObject: TObject;
+  out ASerializerObject: TObject; const AAttributes: TArray<TCustomAttribute>;
+  const ASerializationAction: TMVCSerializationAction);
+var
+  lObjDict: TMVCObjectDictionary;
+  lOutObject: TJsonObject;
+begin
+  lObjDict := TMVCObjectDictionary(AObject);
+  lOutObject := TJsonObject.Create;
+  try
+    InternalSerializeIMVCObjectDictionary(lObjDict, lOutObject, ASerializationAction);
   except
     lOutObject.Free;
     raise;
