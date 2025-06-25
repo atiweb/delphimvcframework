@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -58,10 +58,14 @@ type
      program_msheap='program.msheap';
      program_sqids='program.sqids';
      program_dotenv='program.dotenv';
+     program_ssv_templatepro='program.ssv.templatepro';
+     program_ssv_webstencils='program.ssv.webstencils';
      program_ssv_mustache='program.ssv.mustache';
      program_service_container_generate = 'program.service.container.generate';
      program_service_container_unit_name = 'program.service.container.unit_name';
      mustache_helpers_unit_name = 'mustache.helpers_unit_name';
+     templatepro_helpers_unit_name = 'templatepro.helpers_unit_name';
+     webstencils_helpers_unit_name = 'webstencils.helpers_unit_name';
      controller_unit_name='controller.unit_name';
      controller_classname= 'controller.classname';
      controller_index_methods_generate= 'controller.index_methods.generate';

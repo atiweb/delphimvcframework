@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -74,6 +74,14 @@ type
     class function GetList(const aCount: Integer = 3): TObjectList<TPerson>;
   end;
 
+  [MVCNameCase(ncAsIs)]
+  TTestCasingAsIs = class
+  private
+    fmyProp: string;
+  public
+    property myProp: string read fmyProp write fmyProp;
+  end;
+
   TPeople = TObjectList<TPerson>;
 
   TClassWithArrays = class
@@ -108,7 +116,6 @@ type
     property EnumWithMappedValues: TEnumColorTest read fEnumWithMappedValues write fEnumWithMappedValues;
   end;
 
-  [MVCNameCase(ncLowerCase)]
   [MVCNameCase(ncLowerCase)]
   [MVCTable('nullables_test')]
   TNullablesTest = class(TMVCActiveRecord)
@@ -731,9 +738,9 @@ begin
   Result := Result and (Self.ff_int4 = lOtherObj.ff_int4);
   Result := Result and (Self.ff_int8 = lOtherObj.ff_int8);
   Result := Result and (Self.ff_bool = lOtherObj.ff_bool);
-  Result := Result and (Self.ff_date = lOtherObj.ff_date);
-  Result := Result and (Self.ff_time = lOtherObj.ff_time);
-  Result := Result and (Self.ff_datetime = lOtherObj.ff_datetime);
+  Result := Result and Self.ff_date.Equals(lOtherObj.ff_date);
+  Result := Result and Self.ff_time.Equals(lOtherObj.ff_time);
+  Result := Result and Self.ff_datetime.Equals(lOtherObj.ff_datetime);
   Result := Result and (Self.ff_float4 = lOtherObj.ff_float4);
   Result := Result and (Self.ff_float8 = lOtherObj.ff_float8);
   Result := Result and (Self.ff_string = lOtherObj.ff_string);

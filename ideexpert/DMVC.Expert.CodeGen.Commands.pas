@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -164,6 +164,32 @@ type
       ); override;
   end;
 
+  TUnitTemplateProHelpersDeclarationCommand = class(TCustomCommand)
+  public
+    procedure ExecuteInterface(
+      Section: TStringBuilder;
+      Model: TJSONObject
+      ); override;
+    procedure ExecuteImplementation(
+      Section: TStringBuilder;
+      Model: TJsonObject
+      ); override;
+  end;
+
+  TUnitWebStencilsHelpersDeclarationCommand = class(TCustomCommand)
+  public
+    procedure ExecuteInterface(
+      Section: TStringBuilder;
+      Model: TJSONObject
+      ); override;
+    procedure ExecuteImplementation(
+      Section: TStringBuilder;
+      Model: TJsonObject
+      ); override;
+  end;
+
+
+
 
   TUnitFooterCommand = class(TCustomCommand)
   public
@@ -305,16 +331,19 @@ begin
     .AppendLine('  MVCFramework.DotEnv,')
     .AppendLine('  MVCFramework.Commons,')
     .AppendLine('  MVCFramework.Serializer.Commons,');
+
   if Model.B[TConfigKey.program_ssv_mustache] then
   begin
+    {The Mustache units are required in the "program" because the mustache helpers are declared there.
+     Should we create an external unit as we do in templatepro and webstencils }
     Section
-      .AppendLine('    MVCFramework.View.Renderers.Mustache,')
-      .AppendLine('    mormot.core.mustache,');
+      .AppendLine('  MVCFramework.View.Renderers.Mustache,')
+      .AppendLine('  mormot.core.mustache,');
   end;
   if Model.B[TConfigKey.program_service_container_generate] then
   begin
     Section
-      .AppendLine('    MVCFramework.Container,')
+      .AppendLine('  MVCFramework.Container,')
   end;
   Section
     .AppendLine('  MVCFramework.Signal;')
@@ -486,7 +515,8 @@ begin
     end;
     Section
       .AppendLine('  //use Context property to access to the HTTP request and response')
-      .AppendLine('  Result := ''Hello DelphiMVCFramework World'';')
+      .AppendLine('  Result := ''<p>Hello <strong>DelphiMVCFramework</strong> World</p>'' + ')
+	  .AppendLine('            ''<p><small>dmvcframework-'' + DMVCFRAMEWORK_VERSION + ''</small></p>'';')
       .AppendLine('end;')
       .AppendLine
       .AppendLine('function ' + Model[TConfigKey.controller_classname] + '.GetReversedString(const Value: String): String;')
@@ -646,6 +676,7 @@ begin
       .AppendLine('  public')
       .AppendLine('    [MVCPath]')
       .AppendLine('    [MVCHTTPMethod([httpGET])]')
+	  .AppendLine('    [MVCProduces(TMVCMediaType.TEXT_HTML)]')
       .AppendLine('    function Index: String;')
       .AppendLine
       .AppendLine('    [MVCPath(''/reversedstrings/($Value)'')]')
@@ -739,8 +770,13 @@ procedure TUnitWebModuleDeclarationCommand.ExecuteImplementation(
 var
   activerecord_con_def_name: string;
   activerecord_con_def_filename: string;
+  default_media_type: string;
+  lAddURLEncodedSerializer: Boolean;
 begin
   inherited;
+
+  default_media_type := 'TMVCConstants.DEFAULT_CONTENT_TYPE';
+
   Section
     .AppendLine
     .AppendLine('implementation')
@@ -758,13 +794,38 @@ begin
   Section
     .AppendLine('  System.IOUtils,')
     .AppendLine('  MVCFramework.Commons,');
+
+
+
+  if Model.B[TConfigKey.program_ssv_templatepro] then
+  begin
+    Section
+      .AppendLine('  MVCFramework.Serializer.URLEncoded,')
+      .AppendLine('  MVCFramework.View.Renderers.TemplatePro,');
+    default_media_type := 'TMVCMediaType.TEXT_HTML';
+  end;
+
+  if Model.B[TConfigKey.program_ssv_webstencils] then
+  begin
+    Section
+      .AppendLine('  MVCFramework.Serializer.URLEncoded,')
+      .AppendLine('  MVCFramework.View.Renderers.WebStencils,');
+    default_media_type := 'TMVCMediaType.TEXT_HTML';
+  end;
+
+
   if Model.B[TConfigKey.program_ssv_mustache] then
   begin
     Section
-      .AppendLine('  MVCFramework.View.Renderers.Mustache,')
+      .AppendLine('  MVCFramework.Serializer.URLEncoded,')
+      .AppendLine('  MVCFramework.View.Renderers.Mustache,');
+    default_media_type := 'TMVCMediaType.TEXT_HTML';
   end;
+
   Section
     .AppendLine('  MVCFramework.Middleware.ActiveRecord,')
+    .AppendLine('  MVCFramework.Middleware.Session,')
+    .AppendLine('  MVCFramework.Middleware.Redirect,')
     .AppendLine('  MVCFramework.Middleware.StaticFiles,')
     .AppendLine('  MVCFramework.Middleware.Analytics,')
     .AppendLine('  MVCFramework.Middleware.Trace,')
@@ -774,13 +835,11 @@ begin
     .AppendLine
     .AppendLine('procedure ' + Model.S[TConfigKey.webmodule_classname] + '.WebModuleCreate(Sender: TObject);')
     .AppendLine('begin')
-    .AppendLine('  FMVC := TMVCEngine.Create(Self,')
+    .AppendLine('  fMVC := TMVCEngine.Create(Self,')
     .AppendLine('    procedure(Config: TMVCConfig)')
     .AppendLine('    begin')
-    .AppendLine('      // session timeout (0 means session cookie)')
-    .AppendLine('      Config[TMVCConfigKey.SessionTimeout] := dotEnv.Env(''dmvc.session_timeout'', ''0'');')
     .AppendLine('      //default content-type')
-    .AppendLine('      Config[TMVCConfigKey.DefaultContentType] := dotEnv.Env(''dmvc.default.content_type'', TMVCConstants.DEFAULT_CONTENT_TYPE);')
+    .AppendLine('      Config[TMVCConfigKey.DefaultContentType] := dotEnv.Env(''dmvc.default.content_type'', ' + default_media_type  + ');')
     .AppendLine('      //default content charset')
     .AppendLine('      Config[TMVCConfigKey.DefaultContentCharset] := dotEnv.Env(''dmvc.default.content_charset'', TMVCConstants.DEFAULT_CONTENT_CHARSET);')
     .AppendLine('      //unhandled actions are permitted?')
@@ -804,19 +863,63 @@ begin
     .AppendLine('    end);')
     .AppendLine
     .AppendLine('  // Controllers')
-    .AppendLine('  FMVC.AddController(' + Model[TConfigKey.controller_classname] + ');')
+    .AppendLine('  fMVC.AddController(' + Model[TConfigKey.controller_classname] + ');')
     .AppendLine('  // Controllers - END')
     .AppendLine;
-    if Model.B[TConfigKey.program_ssv_mustache] then
+
+    lAddURLEncodedSerializer := False;
+    if Model.B[TConfigKey.program_ssv_templatepro] then
     begin
+      lAddURLEncodedSerializer := True;
       Section
         .AppendLine('  // Server Side View')
-        .AppendLine('  FMVC.SetViewEngine(TMVCMustacheViewEngine);')
+        .AppendLine('  fMVC.SetViewEngine(TMVCTemplateProViewEngine);')
         .AppendLine('  // Server Side View - END')
         .AppendLine;
     end;
+
+    if Model.B[TConfigKey.program_ssv_webstencils] then
+    begin
+      lAddURLEncodedSerializer := True;
+      Section
+        .AppendLine('  // Server Side View')
+        .AppendLine('  fMVC.SetViewEngine(TMVCWebStencilsViewEngine);')
+        .AppendLine('  // Server Side View - END')
+        .AppendLine;
+    end;
+
+    if Model.B[TConfigKey.program_ssv_mustache] then
+    begin
+      lAddURLEncodedSerializer := True;
+      Section
+        .AppendLine('  // Server Side View')
+        .AppendLine('  fMVC.SetViewEngine(TMVCMustacheViewEngine);')
+        .AppendLine('  // Server Side View - END')
+        .AppendLine;
+    end;
+
+    if lAddURLEncodedSerializer then
+    begin
+      Section
+        .AppendLine('  // Serializers')
+        .AppendLine('  fMVC.AddSerializer(TMVCMediaType.APPLICATION_FORM_URLENCODED, TMVCURLEncodedSerializer.Create(nil));')
+        .AppendLine('  // Serializers - END')
+        .AppendLine;
+    end;
+
     Section
-      .AppendLine('  // Middleware');
+      .AppendLine('  // Middleware')
+      .AppendLine('  // To use memory session uncomment the following line')
+      .AppendLine('  // fMVC.AddMiddleware(UseMemorySessionMiddleware);')
+      .AppendLine('  //')
+      .AppendLine('  // To use file based session uncomment the following line')
+      .AppendLine('  // fMVC.AddMiddleware(UseFileSessionMiddleware);')
+      .AppendLine('  //')
+      .AppendLine('  // To use database based session uncomment the following lines,')
+  	  .AppendLine('  // configure you firedac db connection and create table dmvc_sessions')
+  	  .AppendLine('  // fMVC.AddMiddleware(TMVCActiveRecordMiddleware.Create(''firedac_con_def_name''));')
+  	  .AppendLine('  // fMVC.AddMiddleware(UseDatabaseSessionMiddleware);');
+	  
 
     if Model.B[TConfigKey.webmodule_middleware_analytics] then
     begin
@@ -881,7 +984,7 @@ begin
       .AppendLine
       .AppendLine('procedure ' + Model.S[TConfigKey.webmodule_classname] + '.WebModuleDestroy(Sender: TObject);')
       .AppendLine('begin')
-      .AppendLine('  FMVC.Free;')
+      .AppendLine('  fMVC.Free;')
       .AppendLine('end;')
       .AppendLine
       .AppendLine('end.')
@@ -1006,6 +1109,10 @@ begin
     .AppendLine('  // UseConsoleLogger defines if logs must be emitted to also the console (if available).')
     .AppendLine('  UseConsoleLogger := True;')
     .AppendLine()
+    .AppendLine('  // UseLoggerVerbosityLevel defines the lowest level of logs that will be produced.')
+    .AppendLine('  UseLoggerVerbosityLevel := TLogLevel.levNormal;')
+    .AppendLine()
+    .AppendLine()
     .AppendLine('  LogI(''** DMVCFramework Server ** build '' + DMVCFRAMEWORK_VERSION);');
 
   if Model.B[TConfigKey.program_dotenv] then
@@ -1050,10 +1157,23 @@ begin
     .AppendLine('    if dotEnv.Env(''dmvc.profiler.enabled'', ' + Model.S[TConfigKey.controller_actions_profiling_generate].ToLower + ') then')
     .AppendLine('    begin')
     .AppendLine('      Profiler.ProfileLogger := Log;')
-    .AppendLine('      Profiler.WarningThreshold := dotEnv.Env(''dmvc.profiler.warning_threshold'', 2000);')
+    .AppendLine('      Profiler.WarningThreshold := dotEnv.Env(''dmvc.profiler.warning_threshold'', 1000);')
+	.AppendLine('      Profiler.LogsOnlyIfOverThreshold := dotEnv.Env(''dmvc.profiler.logs_only_over_threshold'', True);')
     .AppendLine('    end;')
     .AppendLine('{$ENDIF}')
     .AppendLine;
+
+  if Model.B[TConfigKey.program_ssv_templatepro] then
+  begin
+    Section
+      .AppendLine('    TemplateProContextConfigure;');
+  end;
+
+  if Model.B[TConfigKey.program_ssv_webstencils] then
+  begin
+    Section
+      .AppendLine('    WebStencilsProcessorConfigure;');
+  end;
 
   if Model.B[TConfigKey.program_ssv_mustache] then
   begin
@@ -1133,7 +1253,7 @@ begin
     .AppendLine('    LServer.MaxConnections := dotEnv.Env(''dmvc.webbroker.max_connections'', 0);')
     .AppendLine('    LServer.ListenQueue := dotEnv.Env(''dmvc.indy.listen_queue'', 500);')
     .AppendLine('    LServer.Active := True;')
-    .AppendLine('    LogI(''Listening on port '' + APort.ToString);')
+    .AppendLine('    LogI(''Listening on http://localhost:'' + APort.ToString);')
     .AppendLine('    LogI(''Application started. Press Ctrl+C to shut down.'');')
     .AppendLine('    WaitForTerminationSignal;')
     .AppendLine('    EnterInShutdownState;')
@@ -1339,6 +1459,156 @@ begin
     .AppendLine('procedure RegisterServices(Container: IMVCServiceContainer);')
     .AppendLine;
 
+end;
+
+{ TUnitTemplateProHelpersDeclarationCommand }
+
+procedure TUnitTemplateProHelpersDeclarationCommand.ExecuteImplementation(
+  Section: TStringBuilder; Model: TJsonObject);
+begin
+  inherited;
+  Section
+    .AppendLine('implementation')
+    .AppendLine
+    .AppendLine('uses')
+    .AppendLine('  System.SysUtils;')
+    .AppendLine
+    .AppendLine
+    .AppendLine('function MyHelper1(const Value: TValue; const Parameters: TArray<TFilterParameter>): TValue;')
+    .AppendLine('begin')
+    .AppendLine('  Result := Value.ToString +  '' (I''''m The MyHelper1)'';')
+    .AppendLine('end;')
+    .AppendLine
+    .AppendLine('function MyHelper2(const Value: TValue; const Parameters: TArray<TFilterParameter>): TValue;')
+    .AppendLine('begin')
+    .AppendLine('  Result := Value.ToString +  '' (I''''m The MyHelper2)'';')
+    .AppendLine('end;')
+    .AppendLine
+    .AppendLine
+    .AppendLine('procedure TemplateProContextConfigure;')
+    .AppendLine('begin')
+    .AppendLine('  TTProConfiguration.OnContextConfiguration := procedure(const CompiledTemplate: ITProCompiledTemplate)')
+    .AppendLine('  begin')
+    .AppendLine('    // These filters will be available to the TemplatePro views as if they were the standard ones')
+    .AppendLine('    CompiledTemplate.AddFilter(''MyHelper1'', MyHelper1);')
+    .AppendLine('    CompiledTemplate.AddFilter(''MyHelper2'', MyHelper2);')
+    .AppendLine
+    .AppendLine('    CompiledTemplate.OnGetValue :=')
+    .AppendLine('      procedure(const DataSource, Members: string; var Value: TValue; var Handled: Boolean)')
+    .AppendLine('      begin')
+    .AppendLine('        if SameText(DataSource, ''ext1'') then')
+    .AppendLine('        begin')
+    .AppendLine('          if Members.IsEmpty then')
+    .AppendLine('          begin')
+    .AppendLine('            Value := ''External Value Ext1''')
+    .AppendLine('          end')
+    .AppendLine('          else')
+    .AppendLine('          begin')
+    .AppendLine('            Value := ''Reading ext1.'' + Members;')
+    .AppendLine('          end;')
+    .AppendLine('          Handled := True;')
+    .AppendLine('        end;')
+    .AppendLine('      end')
+    .AppendLine('  end;')
+    .AppendLine('end;')
+    .AppendLine
+    .AppendLine
+    .AppendLine('end.');
+end;
+
+procedure TUnitTemplateProHelpersDeclarationCommand.ExecuteInterface(
+  Section: TStringBuilder; Model: TJSONObject);
+begin
+  inherited;
+  CheckFor(TConfigKey.program_ssv_templatepro, Model);
+  CheckFor(TConfigKey.templatepro_helpers_unit_name, Model);
+  Section
+    .AppendLine('unit ' + Model[TConfigKey.templatepro_helpers_unit_name] + ';')
+    .AppendLine
+    .AppendLine('interface')
+    .AppendLine
+    .AppendLine('uses')
+    .AppendLine('  System.Rtti, TemplatePro;')
+    .AppendLine
+    .AppendLine('function MyHelper1(const Value: TValue; const Parameters: TArray<TFilterParameter>): TValue;')
+    .AppendLine('function MyHelper2(const Value: TValue; const Parameters: TArray<TFilterParameter>): TValue;')
+    .AppendLine
+    .AppendLine
+    .AppendLine('procedure TemplateProContextConfigure;')
+    .AppendLine;
+end;
+
+{ TUnitWebStencilsHelpersDeclarationCommand }
+
+procedure TUnitWebStencilsHelpersDeclarationCommand.ExecuteImplementation(Section: TStringBuilder; Model: TJsonObject);
+begin
+  inherited;
+  Section
+    .AppendLine('implementation')
+    .AppendLine('')
+    .AppendLine('uses')
+    .AppendLine('  System.SysUtils, MVCFramework.View.Renderers.WebStencils, System.Bindings.Methods, Web.Stencils;')
+    .AppendLine('')
+    .AppendLine('')
+    .AppendLine('function MyHelper1(const Parameters: TArray<IValue>): TValue;')
+    .AppendLine('begin')
+    .AppendLine('  Result := Parameters[0].GetValue.ToString +  '' (I''''m The MyHelper1)'';')
+    .AppendLine('end;')
+    .AppendLine('')
+    .AppendLine('function MyHelper2(const Parameters: TArray<IValue>): TValue;')
+    .AppendLine('begin')
+    .AppendLine('  Result := Parameters[0].GetValue.ToString +  '' (I''''m The MyHelper2)'';')
+    .AppendLine('end;')
+    .AppendLine('')
+    .AppendLine('procedure WebStencilsProcessorConfigure;')
+    .AppendLine('begin')
+    .AppendLine('  TBindingMethodsFactory.RegisterMethod(')
+    .AppendLine('   TMethodDescription.Create(')
+    .AppendLine('    MakeInvokable(function(Args: TArray<IValue>): IValue')
+    .AppendLine('    begin')
+    .AppendLine('      Result := TValueWrapper.Create(MyHelper1(Args));')
+    .AppendLine('    end),')
+    .AppendLine('    ''MyHelper1'', ''MyHelper1'', '''', True, ''MyHelper1 is just a sample'', nil));')
+    .AppendLine('')
+    .AppendLine('')
+    .AppendLine('  TBindingMethodsFactory.RegisterMethod(')
+    .AppendLine('   TMethodDescription.Create(')
+    .AppendLine('    MakeInvokable(function(Args: TArray<IValue>): IValue')
+    .AppendLine('    begin')
+    .AppendLine('      Result := TValueWrapper.Create(MyHelper2(Args));')
+    .AppendLine('    end),')
+    .AppendLine('    ''MyHelper2'', ''MyHelper2'', '''', True, ''MyHelper2 is just a sample'', nil));')
+    .AppendLine('')
+    .AppendLine('  TMVCWebStencilsConfiguration.OnProcessorConfiguration :=')
+    .AppendLine('    procedure(const WebStencilsProcessor: TWebStencilsProcessor)')
+    .AppendLine('    begin')
+    .AppendLine('      //custom configuration for TWebStencilsProcessor (executed for each view)')
+    .AppendLine('    end;')
+    .AppendLine('')
+    .AppendLine('end;')
+    .AppendLine('')
+    .AppendLine('end.')
+end;
+
+procedure TUnitWebStencilsHelpersDeclarationCommand.ExecuteInterface(Section: TStringBuilder; Model: TJSONObject);
+begin
+  inherited;
+  CheckFor(TConfigKey.program_ssv_webstencils, Model);
+  CheckFor(TConfigKey.webstencils_helpers_unit_name, Model);
+  Section
+    .AppendLine('unit ' + Model[TConfigKey.webstencils_helpers_unit_name] + ';')
+    .AppendLine
+    .AppendLine('interface')
+    .AppendLine
+    .AppendLine('uses')
+    .AppendLine('  System.Rtti, System.Bindings.EvalProtocol;')
+    .AppendLine
+    .AppendLine('function MyHelper1(const Parameters: TArray<IValue>): TValue;')
+    .AppendLine('function MyHelper2(const Parameters: TArray<IValue>): TValue;')
+    .AppendLine
+    .AppendLine
+    .AppendLine('procedure WebStencilsProcessorConfigure;')
+    .AppendLine;
 end;
 
 end.

@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -189,8 +189,8 @@ begin
   end;
   LRequestPathInfo := TIdURI.PathEncode(Trim(LRequestPathInfo)); //regression introduced in fix for issue 492
 
-  TMonitor.Enter(gLock);
-  try
+//  TMonitor.Enter(gLock);
+//  try
     LControllerMappedPaths := TStringList.Create;
     try
       for LControllerDelegate in AControllers do
@@ -295,9 +295,9 @@ begin
     finally
       LControllerMappedPaths.Free;
     end;
-  finally
-    TMonitor.Exit(gLock);
-  end;
+//  finally
+//    TMonitor.Exit(gLock);
+//  end;
 end;
 
 function TMVCRouter.GetAttribute<T>(const AAttributes: TArray<TCustomAttribute>): T;
@@ -486,7 +486,7 @@ var
   FoundOneAttProduces: Boolean;
 begin
   Result := False;
-  if AAccept.Contains('*/*') then // 2020-08-08
+  if AAccept.IsEmpty or AAccept.Contains('*/*') then // 2020-08-08, 2025-04-17
   begin
     Exit(True);
   end;
@@ -597,7 +597,13 @@ end;
 
 function TMVCActionParamCacheItem.Match(const Value: String): TMatch;
 begin
-  Result := fRegEx.Match(Value);
+  TMonitor.Enter(Self);
+  try
+    // See https://stackoverflow.com/questions/53016707/is-system-regularexpressions-tregex-thread-safe
+    Result := fRegEx.Match(Value);
+  finally
+    TMonitor.Exit(Self);
+  end;
 end;
 
 function TMVCActionParamCacheItem.Params: TList<TPair<String, String>>;

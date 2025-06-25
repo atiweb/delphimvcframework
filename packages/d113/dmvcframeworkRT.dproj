@@ -2,7 +2,7 @@
     <PropertyGroup>
         <ProjectGuid>{96D17257-AF74-48CB-9893-7BCCB56A069D}</ProjectGuid>
         <MainSource>dmvcframeworkRT.dpk</MainSource>
-        <ProjectVersion>20.1</ProjectVersion>
+        <ProjectVersion>20.2</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Debug</Config>
@@ -88,7 +88,7 @@
         <BT_BuildType>Debug</BT_BuildType>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <DCC_Description>DMVCFramework - CopyRight (2010-2021) Daniele Teti and the DMVCFramework Team</DCC_Description>
+        <DCC_Description>DMVCFramework - CopyRight (2010-2024) Daniele Teti and the DMVCFramework Team</DCC_Description>
         <DCC_UsePackage>rtl;dbrtl;IndySystem;IndyProtocols;IndyCore;dmvcframeworkDT;$(DCC_UsePackage)</DCC_UsePackage>
         <DllSuffix>110</DllSuffix>
     </PropertyGroup>
@@ -120,7 +120,7 @@
         <VerInfo_MajorVer>3</VerInfo_MajorVer>
         <VerInfo_MinorVer>4</VerInfo_MinorVer>
         <DllSuffix>113</DllSuffix>
-        <DCC_Description>DMVCFramework - CopyRight (2010-2023) Daniele Teti and the DMVCFramework Team</DCC_Description>
+        <DCC_Description>DMVCFramework - CopyRight (2010-2024) Daniele Teti and the DMVCFramework Team</DCC_Description>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
@@ -150,7 +150,6 @@
         <DCCReference Include="..\..\sources\MVCFramework.Middleware.ETag.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.ActiveRecord.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.ActiveRecordController.pas"/>
-        <DCCReference Include="..\..\sources\MVCFramework.ApplicationSession.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Cache.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Commons.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Console.pas"/>
@@ -239,7 +238,7 @@
                     <Excluded_Packages Name="$(BDSBIN)\dclofficexp280.bpl">Microsoft Office XP Sample Automation Server Wrapper Components</Excluded_Packages>
                 </Excluded_Packages>
             </Delphi.Personality>
-            <Deployment Version="4">
+            <Deployment Version="5">
                 <DeployFile LocalName="$(BDS)\Redist\iossimulator\libcgunwind.1.0.dylib" Class="DependencyModule">
                     <Platform Name="iOSSimulator">
                         <Overwrite>true</Overwrite>
@@ -272,16 +271,6 @@
                         <Operation>0</Operation>
                     </Platform>
                 </DeployClass>
-                <DeployClass Name="AndroidClasses">
-                    <Platform Name="Android">
-                        <RemoteDir>classes</RemoteDir>
-                        <Operation>64</Operation>
-                    </Platform>
-                    <Platform Name="Android64">
-                        <RemoteDir>classes</RemoteDir>
-                        <Operation>64</Operation>
-                    </Platform>
-                </DeployClass>
                 <DeployClass Name="AndroidFileProvider">
                     <Platform Name="Android">
                         <RemoteDir>res\xml</RemoteDir>
@@ -289,12 +278,6 @@
                     </Platform>
                     <Platform Name="Android64">
                         <RemoteDir>res\xml</RemoteDir>
-                        <Operation>1</Operation>
-                    </Platform>
-                </DeployClass>
-                <DeployClass Name="AndroidGDBServer">
-                    <Platform Name="Android">
-                        <RemoteDir>library\lib\armeabi-v7a</RemoteDir>
                         <Operation>1</Operation>
                     </Platform>
                 </DeployClass>

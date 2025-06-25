@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -209,6 +209,7 @@ type
       overload; static;
     class function GetKeyName(const AProperty: TRttiProperty; const AType: TRttiType): string;
       overload; static;
+    class function GetPropertyKeyName(const APropertyName: String; const AClass: TClass): string; static;
     class function HasAttribute<T: class>(const AMember: TRttiObject): Boolean; overload; static;
     class function HasAttribute<T: class>(const AMember: TRttiObject; out AAttribute: T): Boolean;
       overload; static;
@@ -450,8 +451,8 @@ function StrDict: TMVCStringDictionary; overload;
 function StrDict(const aKeys: array of string; const aValues: array of string)
   : TMVCStringDictionary; overload;
 function ObjectDict(const OwnsValues: Boolean = True): IMVCObjectDictionary;
-function GetPaginationMeta(const CurrPageNumber: UInt32; const CurrPageSize: UInt32;
-  const DefaultPageSize: UInt32; const URITemplate: string): TMVCStringDictionary;
+function GetPaginationData(const CurrPageNumber: UInt32; const CurrPageSize: UInt32;
+  const DefaultPageSize: UInt32; const URITemplate: string; const IncludePrevURI: Boolean = True): TMVCStringDictionary;
 procedure RaiseSerializationError(const Msg: string);
 procedure RaiseDeSerializationError(const Msg: string);
 
@@ -478,25 +479,31 @@ begin
   Result := TMVCStringDictionary.Create;
 end;
 
-function GetPaginationMeta(const CurrPageNumber: UInt32; const CurrPageSize: UInt32;
-  const DefaultPageSize: UInt32; const URITemplate: string): TMVCStringDictionary;
+function GetPaginationData(const CurrPageNumber: UInt32; const CurrPageSize: UInt32;
+  const DefaultPageSize: UInt32; const URITemplate: string; const IncludePrevURI: Boolean): TMVCStringDictionary;
 var
   lMetaKeys: array of string;
   lMetaValues: array of string;
 begin
-  Insert('curr_page', lMetaKeys, 0);
+  Insert('page_num', lMetaKeys, 0);
   Insert(CurrPageNumber.ToString(), lMetaValues, 0);
 
-  if CurrPageNumber > 1 then
+  Insert('page_size', lMetaKeys, 0);
+  Insert(CurrPageSize.ToString(), lMetaValues, 0);
+
+  Insert('default_page_size', lMetaKeys, 0);
+  Insert(DefaultPageSize.ToString(), lMetaValues, 0);
+
+  if (CurrPageNumber > 1) and IncludePrevURI then
   begin
     Insert('prev_page_uri', lMetaKeys, 0);
-    Insert(Format(URITemplate, [(CurrPageNumber - 1)]), lMetaValues, 0);
+    Insert(URITemplate.Replace('($page)', (CurrPageNumber - 1).ToString), lMetaValues, 0);
   end;
 
   if CurrPageSize = DefaultPageSize then
   begin
     Insert('next_page_uri', lMetaKeys, 0);
-    Insert(Format(URITemplate, [(CurrPageNumber + 1)]), lMetaValues, 0);
+    Insert(URITemplate.Replace('($page)',(CurrPageNumber + 1).ToString), lMetaValues, 0);
   end;
   Result := StrDict(lMetaKeys, lMetaValues);
 end;
@@ -629,7 +636,15 @@ begin
   begin
     if Attr is MVCNameAsAttribute then
     begin
-      Exit(MVCNameAsAttribute(Attr).Name);
+      Result := MVCNameAsAttribute(Attr).Name;
+      if MVCNameAsAttribute(Attr).Fixed then { if FIXED the attribute NameAs remains untouched }
+      begin
+        Exit
+      end
+      else
+      begin
+        Break;
+      end;
     end;
   end;
 
@@ -641,6 +656,7 @@ begin
       Exit(TMVCSerializerHelper.ApplyNameCase(MVCNameCaseAttribute(Attr).KeyCase, AField.Name));
     end;
   end;
+  Result := TMVCSerializerHelper.ApplyNameCase(MVCNameCaseDefault, Result);
 end;
 
 class function TMVCSerializerHelper.AttributeExists<T>(const AAttributes: TArray<TCustomAttribute>;
@@ -846,6 +862,34 @@ begin
     end;
   end;
   Result := TMVCSerializerHelper.ApplyNameCase(MVCNameCaseDefault, Result);
+end;
+
+class function TMVCSerializerHelper.GetPropertyKeyName(const APropertyName: String; const AClass: TClass): string;
+var
+  Context: TRttiContext;
+  ObjectType: TRttiType;
+  lProp: TRttiProperty;
+begin
+{$IF not Defined(TokyoOrBetter)}
+  Result := nil;
+{$ENDIF}
+  Context := TRttiContext.Create;
+  try
+    ObjectType := Context.FindType(AClass.QualifiedClassName);
+    if not Assigned(ObjectType) then
+      raise Exception.CreateFmt
+        ('Cannot find RTTI for %s. Hint: Is the specified classtype linked in the module?',
+        [AClass.QualifiedClassName])
+    else
+    begin
+      lProp := ObjectType.GetProperty(APropertyName);
+      if not Assigned(lProp) then
+        raise Exception.Create('Cannot find property ' + APropertyName);
+      Result := TMVCSerializerHelper.GetKeyName(lProp, ObjectType);
+    end;
+  finally
+    Context.Free;
+  end;
 end;
 
 class function TMVCSerializerHelper.GetTypeKindAsString(const ATypeKind: TTypeKind): string;
@@ -1087,6 +1131,7 @@ var
   lInternalStream: TStream;
   lSStream: TStringStream;
   lValue: TValue;
+  lTmpValue: TValue;
   lStrValue: string;
 {$IF not Defined(TokyoOrBetter)}
   lFieldValue: string;
@@ -1166,15 +1211,14 @@ begin
         // general enumerations
     		else if (aRTTIField.FieldType.TypeKind = tkEnumeration) then
         begin
-          var Value: TValue;
           case aRTTIField.FieldType.TypeSize of
-            SizeOf(Byte): Value := TValue.From<Byte>(AField.AsInteger);
-            SizeOf(Word): Value := TValue.From<Word>(AField.AsInteger);
-            SizeOf(Integer): Value := TValue.From<Integer>(AField.AsInteger);
+            SizeOf(Byte): lTmpValue := TValue.From<Byte>(AField.AsInteger);
+            SizeOf(Word): lTmpValue := TValue.From<Word>(AField.AsInteger);
+            SizeOf(Integer): lTmpValue := TValue.From<Integer>(AField.AsInteger);
             else
               raise EMVCException.CreateFmt('Unsupported enumeration type for field %s', [AField.FieldName]);
           end;
-          Value.ExtractRawData(PByte(Pointer(AObject)) + aRTTIField.Offset);
+          lTmpValue.ExtractRawData(PByte(Pointer(AObject)) + aRTTIField.Offset);
         end
         // plain integers
         else
@@ -1361,7 +1405,7 @@ begin
   begin
     if AField.IsNull then
     begin
-      aRTTIField.GetValue(AObject).AsType<NullableString>().Clear;
+      aRTTIField.SetValue(AObject, TValue.From<NullableString>(nil));
     end
     else
     begin

@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -34,15 +34,26 @@ type
   TMVCAsyncBackgroundTask<T> =  reference to function: T;
   TMVCAsyncSuccessCallback<T> = reference to procedure(const BackgroundTaskResult: T);
   TMVCAsyncErrorCallback = reference to procedure(const Expt: Exception);
+  TMVCAsyncAlwaysCallback =  reference to procedure;
   TMVCAsyncDefaultErrorCallback = reference to procedure(const Expt: Exception;
     const ExptAddress: Pointer);
+
+  MVCAsyncObject = class sealed
+  public
+    class function Run<T: class>(
+      Task: TMVCAsyncBackgroundTask<T>;
+      Success: TMVCAsyncSuccessCallback<T>;
+      Error: TMVCAsyncErrorCallback = nil;
+      Always: TMVCAsyncAlwaysCallback = nil): ITask;
+  end;
 
   MVCAsync = class sealed
   public
     class function Run<T>(
       Task: TMVCAsyncBackgroundTask<T>;
       Success: TMVCAsyncSuccessCallback<T>;
-      Error: TMVCAsyncErrorCallback = nil): ITask;
+      Error: TMVCAsyncErrorCallback = nil;
+      Always: TMVCAsyncAlwaysCallback = nil): ITask;
   end;
 
 var
@@ -61,12 +72,76 @@ uses
   {$ENDIF}
   ;
 
-{ Async }
+
+class function MVCAsyncObject.Run<T>(
+  Task: TMVCAsyncBackgroundTask<T>;
+  Success: TMVCAsyncSuccessCallback<T>;
+  Error: TMVCAsyncErrorCallback;
+  Always: TMVCAsyncAlwaysCallback): ITask;
+var
+  LRes: T;
+begin
+  Result := TTask.Run(
+    procedure
+    var
+      Ex: Pointer;
+      ExceptionAddress: Pointer;
+    begin
+      Ex := nil;
+      try
+        LRes := Task();
+        try
+          if Assigned(Success) then
+          begin
+            TThread.Synchronize(nil,
+              procedure
+              begin
+                Success(LRes);
+              end);
+          end;
+        finally
+          lRes.Free;
+          lRes := nil;
+        end;
+      except
+        Ex := AcquireExceptionObject;
+        ExceptionAddress := ExceptAddr;
+        TThread.Synchronize(nil,
+          procedure
+          var
+            LCurrException: Exception;
+          begin
+            LCurrException := Exception(Ex);
+            try
+              if Assigned(Error) then
+              begin
+                Error(LCurrException);
+              end
+              else
+              begin
+                gDefaultTaskErrorHandler(LCurrException, ExceptionAddress);
+              end;
+            finally
+              FreeAndNil(LCurrException);
+            end;
+          end);
+      end;
+      if Assigned(Always) then
+      begin
+        TThread.Synchronize(nil,
+          procedure
+          begin
+            Always();
+          end);
+      end;
+    end);
+end;
 
 class function MVCAsync.Run<T>(
   Task: TMVCAsyncBackgroundTask<T>;
   Success: TMVCAsyncSuccessCallback<T>;
-  Error: TMVCAsyncErrorCallback): ITask;
+  Error: TMVCAsyncErrorCallback;
+  Always: TMVCAsyncAlwaysCallback): ITask;
 var
   LRes: T;
 begin
@@ -81,7 +156,7 @@ begin
         LRes := Task();
         if Assigned(Success) then
         begin
-          TThread.Queue(nil,
+          TThread.Synchronize(nil,
             procedure
             begin
               Success(LRes);
@@ -90,7 +165,7 @@ begin
       except
         Ex := AcquireExceptionObject;
         ExceptionAddress := ExceptAddr;
-        TThread.Queue(nil,
+        TThread.Synchronize(nil,
           procedure
           var
             LCurrException: Exception;
@@ -98,16 +173,29 @@ begin
             LCurrException := Exception(Ex);
             try
               if Assigned(Error) then
-                Error(LCurrException)
+              begin
+                Error(LCurrException);
+              end
               else
+              begin
                 gDefaultTaskErrorHandler(LCurrException, ExceptionAddress);
+              end;
             finally
               FreeAndNil(LCurrException);
             end;
           end);
       end;
+      if Assigned(Always) then
+      begin
+        TThread.Synchronize(nil,
+          procedure
+          begin
+            Always();
+          end);
+      end;
     end);
 end;
+
 
 initialization
 

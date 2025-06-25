@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -97,6 +97,15 @@ type
     procedure OnAfterRouting(AContext: TWebContext; const AHandled: Boolean);
   end;
 
+  function UseStaticFilesMiddleware(
+      const AStaticFilesPath: string = TMVCStaticFilesDefaults.STATIC_FILES_PATH;
+      const ADocumentRoot: string = TMVCStaticFilesDefaults.DOCUMENT_ROOT;
+      const AIndexDocument: string = TMVCStaticFilesDefaults.INDEX_DOCUMENT;
+      const ASPAWebAppSupport: Boolean = True;
+      const AStaticFilesCharset: string = TMVCStaticFilesDefaults.STATIC_FILES_CONTENT_CHARSET;
+      const ARules: TMVCStaticFileRulesProc = nil;
+      const AMediaTypesCustomizer: TMVCStaticFileMediaTypesCustomizer = nil): IMVCMiddleware;
+
 implementation
 
 uses
@@ -105,6 +114,26 @@ uses
   System.NetEncoding,
   System.IOUtils,
   System.Classes;
+
+function UseStaticFilesMiddleware(
+    const aStaticFilesPath: string = TMVCStaticFilesDefaults.STATIC_FILES_PATH;
+    const aDocumentRoot: string = TMVCStaticFilesDefaults.DOCUMENT_ROOT;
+    const aIndexDocument: string = TMVCStaticFilesDefaults.INDEX_DOCUMENT;
+    const aSPAWebAppSupport: Boolean = True;
+    const aStaticFilesCharset: string = TMVCStaticFilesDefaults.STATIC_FILES_CONTENT_CHARSET;
+    const aRules: TMVCStaticFileRulesProc = nil;
+    const aMediaTypesCustomizer: TMVCStaticFileMediaTypesCustomizer = nil): IMVCMiddleware;
+begin
+  Result := TMVCStaticFilesMiddleware.Create(
+    aStaticFilesPath,
+    aDocumentRoot,
+    aIndexDocument,
+    aSPAWebAppSupport,
+    aStaticFilesCharset,
+    aRules,
+    aMediaTypesCustomizer
+  );
+end;
 
 { TMVCStaticFilesMiddleware }
 

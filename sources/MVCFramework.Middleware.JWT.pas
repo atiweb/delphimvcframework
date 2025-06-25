@@ -2,7 +2,7 @@
 //
 // Delphi MVC Framework
 //
-// Copyright (c) 2010-2024 Daniele Teti and the DMVCFramework Team
+// Copyright (c) 2010-2025 Daniele Teti and the DMVCFramework Team
 //
 // https://github.com/danieleteti/delphimvcframework
 //
@@ -155,6 +155,30 @@ type
       BlackListRequestURLSegment: string = '/logout');
   end;
 
+  function UseJWTMiddleware(
+      aAuthenticationHandler: IMVCAuthenticationHandler;
+      aConfigClaims: TJWTClaimsSetup;
+      aSecret: string = 'D3lph1MVCFram3w0rk';
+      aLoginURLSegment: string = '/loginff';
+      aClaimsToCheck: TJWTCheckableClaims = [];
+      aLeewaySeconds: Cardinal = 300;
+      aHMACAlgorithm: String = HMAC_HS512): IMVCMiddleware;
+
+  function UseJWTMiddlewareWithHTTPOnlyCookie(
+      aAuthenticationHandler: IMVCAuthenticationHandler;
+      aConfigClaims: TJWTClaimsSetup;
+      aSecret: string = 'D3lph1MVCFram3w0rk';
+      aLoginURLSegment: string = '/login';
+      aLogoutURLSegment: string = '/logoff';
+      aClaimsToCheck: TJWTCheckableClaims = [];
+      aLeewaySeconds: Cardinal = 300;
+      aHMACAlgorithm: String = HMAC_HS512): IMVCMiddleware;
+
+  function UseJWTBlackListMiddleware(
+      OnAcceptToken: TMVCOnAcceptTokenProc;
+      OnNewJWTToBlackList: TMVCOnNewJWTToBlackList;
+      BlackListRequestURLSegment: string = '/logout'
+    ): IMVCMiddleware;
 
 implementation
 
@@ -163,6 +187,44 @@ uses
   System.DateUtils,
   System.Math,
   MVCFramework.Logger;
+
+function UseJWTMiddleware(
+      aAuthenticationHandler: IMVCAuthenticationHandler;
+      aConfigClaims: TJWTClaimsSetup;
+      aSecret: string = 'D3lph1MVCFram3w0rk';
+      aLoginURLSegment: string = '/loginff';
+      aClaimsToCheck: TJWTCheckableClaims = [];
+      aLeewaySeconds: Cardinal = 300;
+      aHMACAlgorithm: String = HMAC_HS512): IMVCMiddleware;
+begin
+  Result := TMVCJWTAuthenticationMiddleware.Create(
+    aAuthenticationHandler, aConfigClaims, aSecret, aLoginURLSegment, aClaimsToCheck, aLeewaySeconds, aHMACAlgorithm);
+end;
+
+
+function UseJWTMiddlewareWithHTTPOnlyCookie(
+    aAuthenticationHandler: IMVCAuthenticationHandler;
+    aConfigClaims: TJWTClaimsSetup;
+    aSecret: string = 'D3lph1MVCFram3w0rk';
+    aLoginURLSegment: string = '/login';
+    aLogoutURLSegment: string = '/logoff';
+    aClaimsToCheck: TJWTCheckableClaims = [];
+    aLeewaySeconds: Cardinal = 300;
+    aHMACAlgorithm: String = HMAC_HS512): IMVCMiddleware;
+begin
+  Result := TMVCJWTAuthenticationMiddleware.Create(
+    aAuthenticationHandler, aConfigClaims, True, aLogoutURLSegment, aSecret, aLoginURLSegment, aClaimsToCheck, aLeewaySeconds, aHMACAlgorithm);
+end;
+
+function UseJWTBlackListMiddleware(
+    OnAcceptToken: TMVCOnAcceptTokenProc;
+    OnNewJWTToBlackList: TMVCOnNewJWTToBlackList;
+    BlackListRequestURLSegment: string = '/logout'
+  ): IMVCMiddleware;
+begin
+  Result := TMVCJWTBlackListMiddleware.Create(OnAcceptToken, OnNewJWTToBlackList, BlackListRequestURLSegment);
+end;
+
 
 { TMVCJWTAuthenticationMiddleware }
 
@@ -247,7 +309,7 @@ end;
 
 procedure TMVCJWTAuthenticationMiddleware.SendLogoffRender(AContext: TWebContext);
 const
-  returnMessage = '{ "message": "Successful logout" }';
+  ReturnMessage = '{ "message": "Successful logout" }';
   ContentType = 'application/json; charset=UTF-8';
   AContentEncoding = 'UTF-8';
 var
@@ -462,6 +524,11 @@ begin
           begin
             LUsername := lJObj.S[FUserNameHeaderName];
             LPassword := lJObj.S[FPasswordHeaderName];
+            if LUsername.IsEmpty then
+            begin
+              LUsername := lJObj.S['username'];
+              LPassword := lJObj.S['password'];
+            end;
           end;
         finally
           lJObj.Free;
