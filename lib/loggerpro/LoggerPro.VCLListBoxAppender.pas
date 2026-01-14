@@ -2,7 +2,7 @@
 //
 // LoggerPro
 //
-// Copyright (c) 2010-2025 Daniele Teti
+// Copyright (c) 2010-2026 Daniele Teti
 //
 // https://github.com/danieleteti/loggerpro
 //
@@ -29,6 +29,7 @@ unit LoggerPro.VCLListBoxAppender;
 
 interface
 
+{$IF Defined(MSWINDOWS)}
 uses
   LoggerPro,
   System.Classes,
@@ -46,9 +47,10 @@ type
     procedure TearDown; override;
     procedure WriteLog(const aLogItem: TLogItem); override;
   end;
-
+{$ENDIF}
 implementation
 
+{$IF Defined(MSWINDOWS)}
 uses
   System.SysUtils;
 
@@ -81,6 +83,7 @@ var
   lText: string;
 begin
   lText := FormatLog(aLogItem);
+
   TThread.Queue(nil,
     procedure
     var
@@ -98,5 +101,7 @@ begin
       end;
     end);
 end;
+
+{$ENDIF}
 
 end.
