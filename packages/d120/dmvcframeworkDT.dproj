@@ -132,6 +132,7 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="..\..\ideexpert\DMVC.Expert.Templates.res"/>
         <DCCReference Include="rtl.dcp"/>
         <DCCReference Include="designide.dcp"/>
         <DCCReference Include="ExpertsCreators.dcp"/>
@@ -157,9 +158,8 @@
         <DCCReference Include="..\..\ideexpert\DMVC.Expert.Registration.pas"/>
         <DCCReference Include="..\..\ideexpert\DMVC.Splash.Registration.pas"/>
         <DCCReference Include="..\..\ideexpert\DMVC.Expert.Commons.pas"/>
-        <DCCReference Include="..\..\ideexpert\DMVC.Expert.CodeGen.Executor.pas"/>
-        <DCCReference Include="..\..\ideexpert\DMVC.Expert.Commands.Templates.pas"/>
-        <DCCReference Include="..\..\ideexpert\DMVC.Expert.CodeGen.Commands.pas"/>
+        <DCCReference Include="..\..\ideexpert\DMVC.Expert.CodeGen.TemplateEngine.pas"/>
+        <DCCReference Include="..\..\ideexpert\DMVC.Expert.ProjectGenerator.pas"/>
         <RcItem Include="..\..\ideexpert\DMVC.Expert.NewProject.ico">
             <ResourceType>ICON</ResourceType>
             <ResourceId>DMVCNewProjectIcon</ResourceId>
@@ -205,6 +205,10 @@
         </BorlandProject>
         <ProjectFileVersion>12</ProjectFileVersion>
     </ProjectExtensions>
+    <Target Name="PreBuildEvent" BeforeTargets="Build">
+        <Message Text="Compiling template resources..." Importance="high"/>
+        <Exec Command="brcc32 &quot;$(MSBuildProjectDirectory)\..\..\ideexpert\DMVC.Expert.Templates.rc&quot;" WorkingDirectory="$(MSBuildProjectDirectory)\..\..\ideexpert"/>
+    </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Delphi.Targets')"/>
     <Import Project="$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj" Condition="Exists('$(APPDATA)\Embarcadero\$(BDSAPPDATABASEDIR)\$(PRODUCTVERSION)\UserTools.proj')"/>
 </Project>
